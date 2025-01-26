@@ -1,5 +1,6 @@
 use std::error::Error;
 use std::fmt::{format, Display, Formatter};
+use anyhow::bail;
 use crate::lox_interpreter::token::Token;
 use crate::lox_interpreter::token_type::{PunctuationType, TokenType};
 
@@ -97,9 +98,10 @@ impl<'a> Scanner<'a> {
 
 
             _ => return Err(
-                ScannerError::new(
+                ScannerError::new_with_location(
                     ScannerErrorType::UnknownToken(String::from(c)),
                     self.line,
+                    self.get_line_with_marker(self.current).expect("Couldn't produce line with a marker")
                 )
             )
         };
@@ -143,13 +145,60 @@ impl<'a> Scanner<'a> {
         char_at_current
     }
 
+    /// Gets a helper string for error displaying with a marker on the second line.
+    /// ### Example
+    /// This function is used to create a string that looks something like this:
+    /// ```
+    /// 14. let test = (hello + 1
+    ///                ^
+    /// ```
+    /// Resulting string consists of two lines and has a marker denoted by
+    /// `^` on the second line. The line is automatically inferred by the `marker_position` from
+    /// the `self.source` string. See "Arguments" below.
+    ///
+    /// ### Arguments
+    /// * `marker_position` - Absolute index of a char into the `self.source` string.
+    /// It is computed by iterating over `self.source.chars()`
+    fn get_line_with_marker(&self, marker_position: usize) -> anyhow::Result<String> {
+        let mut current_position: usize = 0;
+        let mut line_start_position: usize = 0;
+        let mut line_number: u32 = 1;
+        let mut chars = self.source.chars();
+
+        // Find the line start
+        while current_position != marker_position {
+            let current_char = chars.next();
+            match current_char {
+                None => bail!("Reached the end of the string before finding marker_position"),
+                Some(current_char) => {
+                    if current_char == '\n' {
+                        line_start_position = current_position + 1;
+                        line_number += 1;
+                    }
+                }
+            }
+            
+            current_position += 1;
+        }
+        
+        let line: String = self.source.chars()
+            .skip(line_start_position)
+            .take_while(|c| *c != '\n')
+            .collect();
+        
+        let marker_offset = marker_position - line_start_position;
+        let line_number_string = format!("{line_number}. ");
+        let spaces = " ".repeat(line_number_string.len() + marker_offset - 1);
+        
+        Ok(format!("{line_number_string}{line}\n{spaces}^"))
+    }
+
+    /// Peeks current character.
+    ///
+    /// Returns `None` if we are already at the end of the string/asked it
+    /// to return outside bounds
     fn peek_current(&self) -> Option<char> {
-        if self.is_at_end() {
-            None
-        }
-        else {
-            self.source.chars().nth(self.current)
-        }
+        self.source.chars().nth(self.current)
     }
 }
 
