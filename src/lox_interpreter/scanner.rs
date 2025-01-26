@@ -1,4 +1,4 @@
-﻿use std::error::Error;
+use std::error::Error;
 use std::fmt::{format, Display, Formatter};
 use crate::lox_interpreter::token::Token;
 use crate::lox_interpreter::token_type::{PunctuationType, TokenType};
@@ -78,14 +78,8 @@ impl<'a> Scanner<'a> {
                 // Comment
                 if self.next_matches('/') {
                     // Read until the end of the line
-                    loop {
-                        match self.peek_current() {
-                            Some(current_char) => {
-                                if current_char == '\n' { break; }
-                            },
-                            None => break
-                        }
-
+                    while let Some(current_char) = self.peek_current() {
+                        if current_char == '\n' { break; }
                         self.advance();
                     }
                 }
