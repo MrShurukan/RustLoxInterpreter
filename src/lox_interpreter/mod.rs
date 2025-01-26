@@ -59,8 +59,6 @@ impl LoxInterpreter {
         
         let tokens = scanner.scan_tokens()?;
         
-        println!("Done scanning.\n");
-        
         for token in tokens {
             println!("{token:?}")
         }

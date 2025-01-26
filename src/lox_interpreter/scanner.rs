@@ -18,8 +18,6 @@ impl<'a> Scanner<'a> {
     }
 
     pub fn scan_tokens(&mut self) -> Result<&[Token], ScannerError> {
-        dbg!(self.source);
-
         while !self.is_at_end() {
             // We are at the beginning of the next lexeme.
             self.start = self.current;
@@ -139,11 +137,6 @@ impl<'a> Scanner<'a> {
     }
 
     fn add_token(&mut self, token_type: TokenType) {
-        dbg!(self.current);
-        dbg!(self.start);
-        dbg!(&token_type);
-        println!();
-
         let take_count = self.current - self.start;
         let lexeme = self.source.chars().skip(self.start).take(take_count).collect();
         self.tokens.push(Token { token_type, lexeme, line: self.line });
