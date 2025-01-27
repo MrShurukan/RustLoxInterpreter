@@ -3,6 +3,7 @@ use crate::lox_interpreter::token_type::{LiteralType, PunctuationType, TokenType
 use anyhow::bail;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
+use std::iter::Scan;
 use unicode_segmentation::UnicodeSegmentation;
 
 pub struct Scanner<'a> {
@@ -129,7 +130,7 @@ impl<'a> Scanner<'a> {
 
         Ok(())
     }
-
+    
     fn parse_string_literal(&mut self) -> Result<(), ScannerError> {
         let start_string_index = self.current;
         while let Some(current_char) = self.peek_current() {
@@ -167,6 +168,9 @@ impl<'a> Scanner<'a> {
         Ok(())
     }
 
+    // TODO: This function needs some serious simplification and refactoring
+    // TODO: This functions breaks if number is at the end of the file 
+    // (i.e. there are no additional 2 chars ahead) 
     fn parse_number_literal(&mut self) -> Result<(), ScannerError> {
         while let Some(char) = Self::peek_no_borrow(self.source, self.current) {
             if char.chars().any(|c| !c.is_ascii_digit()) {
@@ -177,9 +181,44 @@ impl<'a> Scanner<'a> {
         }
 
         // Look for a fractional part.
-        
-        // if self.peek_current()? == "." && 
-        //     Self::peek_no_borrow(self.source, self.current + 1) ==
+        let current_char = self.peek_current()
+            .ok_or_else(|| self.produce_error_with_location(
+                ScannerErrorType::IncorrectNumberToken, self.current)
+            )?;
+        let char_after_that = Self::peek_no_borrow(self.source, self.current + 1)
+            .ok_or_else(|| self.produce_error_with_location(
+                ScannerErrorType::IncorrectNumberToken, self.current)
+            )?;
+
+        if current_char == "." && char_after_that.chars().all(|c| c.is_ascii_digit()) {
+            // Consume the "."
+            self.advance();
+
+            while let Some(char) = Self::peek_no_borrow(self.source, self.current) {
+                if char.chars().any(|c| !c.is_ascii_digit()) {
+                    break;
+                }
+
+                self.advance();
+            }
+        }
+
+        // Get the number itself value
+        let str: String = self.source.graphemes(true)
+            .skip(self.start)
+            .take(self.current - self.start)
+            .collect();
+
+        let value: f64 = str.parse().map_err(|_| self.produce_error_with_location(
+            ScannerErrorType::IncorrectNumberToken, self.current))?;
+
+        let token = Token {
+            lexeme: str,
+            token_type: TokenType::Literal(LiteralType::Number(value)),
+            line: self.line
+        };
+
+        self.add_token(token);
         Ok(())
     }
 
@@ -291,7 +330,7 @@ impl<'a> Scanner<'a> {
             _ => false
         }
     }
-    
+
     fn produce_error_with_location(&self, scanner_error_type: ScannerErrorType, location: usize) -> ScannerError {
         ScannerError::new_with_location(scanner_error_type, location, self.source)
     }
@@ -315,7 +354,7 @@ impl ScannerError {
 
     pub fn new_with_location(error_type: ScannerErrorType, marker_position: usize, source: &str) -> Self {
         let mut line_number: usize = 0;
-        
+
         let location = Scanner::get_line_with_marker(source, marker_position, &mut line_number)
             .expect("Couldn't produce line with a marker");
         ScannerError { error_type, line: line_number as u32, location: Some(location) }
@@ -326,6 +365,7 @@ impl ScannerError {
 pub enum ScannerErrorType {
     UnknownToken(String),
     UnterminatedString,
+    IncorrectNumberToken,
     NoMoreTokens
 }
 
@@ -338,6 +378,7 @@ impl Display for ScannerError {
         let output = match &self.error_type {
             ScannerErrorType::UnknownToken(lexeme) => format!("Unknown token ('{}')", lexeme),
             ScannerErrorType::UnterminatedString => "Unterminated string".parse().unwrap(),
+            ScannerErrorType::IncorrectNumberToken => "The number was written in an incorrect format".parse().unwrap(),
             ScannerErrorType::NoMoreTokens => "There were no more tokens to parse".parse().unwrap(),
 
             _ => format!("{:?}", self)
