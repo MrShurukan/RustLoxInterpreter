@@ -1,6 +1,8 @@
 } {
 
-(()) {} "random string" {}()
+"Я поддерживаю русский
+
+(()) {} {}()
 
 // this is a comment
 (( )){} // grouping stuff
