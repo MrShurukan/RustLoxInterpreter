@@ -53,7 +53,7 @@ impl<'a> Scanner<'a> {
     fn scan_token(&mut self) -> Result<(), ScannerError> {
         let c = match self.advance() {
             Some(token) => token,
-            None => return Err(ScannerError::new(ScannerErrorType::NoMoreTokens, self.line)),
+            None => return Err(self.produce_error(ScannerErrorType::NoMoreTokens)),
         };
 
         use TokenType::Punctuation as P;
@@ -115,14 +115,16 @@ impl<'a> Scanner<'a> {
             // Literals
             "\"" => self.parse_string_literal()?,
 
-            _ => return Err(
-                ScannerError::new_with_location(
-                    ScannerErrorType::UnknownToken(String::from(c)),
-                    self.line,
-                    self.current,
-                    self.source
-                )
-            )
+            // It's okay to use chars here, as numbers will always be expected to be regular chars,
+            // not graphemes
+            number if number.chars().all(|x| x.is_ascii_digit()) => {
+                self.parse_number_literal()?;
+            }
+
+            _ => {
+                let error_type = ScannerErrorType::UnknownToken(String::from(c));
+                return Err(self.produce_error_with_location(error_type, self.current))
+            }
         };
 
         Ok(())
@@ -142,12 +144,7 @@ impl<'a> Scanner<'a> {
 
         if self.is_at_end() {
             return Err(
-                ScannerError::new_with_location(
-                    ScannerErrorType::UnterminatedString,
-                    self.line,
-                    start_string_index,
-                    self.source
-                )
+                self.produce_error_with_location(ScannerErrorType::UnterminatedString, start_string_index)
             );
         }
 
@@ -167,6 +164,22 @@ impl<'a> Scanner<'a> {
         };
         
         self.add_token(token);
+        Ok(())
+    }
+
+    fn parse_number_literal(&mut self) -> Result<(), ScannerError> {
+        while let Some(char) = Self::peek_no_borrow(self.source, self.current) {
+            if char.chars().any(|c| !c.is_ascii_digit()) {
+                break;
+            }
+
+            self.advance();
+        }
+
+        // Look for a fractional part.
+        
+        // if self.peek_current()? == "." && 
+        //     Self::peek_no_borrow(self.source, self.current + 1) ==
         Ok(())
     }
 
@@ -205,7 +218,7 @@ impl<'a> Scanner<'a> {
     }
 
     fn advance(&mut self) -> Option<&str> {        
-        let char_at_current = Self::peek_current_no_borrow(self.source, self.current);
+        let char_at_current = Self::peek_no_borrow(self.source, self.current);
         self.current += 1;
 
         char_at_current
@@ -225,10 +238,10 @@ impl<'a> Scanner<'a> {
     /// ### Arguments
     /// * `marker_position` - Absolute index of a char into the `self.source` string.
     /// It is computed by iterating over `self.source.graphemes(true)`
-    fn get_line_with_marker(source: &str, marker_position: usize) -> anyhow::Result<String> {
+    fn get_line_with_marker(source: &str, marker_position: usize, line_number: &mut usize) -> anyhow::Result<String> {
         let mut current_position: usize = 0;
         let mut line_start_position: usize = 0;
-        let mut line_number: u32 = 1;
+        let mut line_num: usize = 1;
         let mut chars = source.graphemes(true);
 
         // Find the line start
@@ -239,7 +252,7 @@ impl<'a> Scanner<'a> {
                 Some(current_char) => {
                     if Self::is_newline(current_char) {
                         line_start_position = current_position + 1;
-                        line_number += 1;
+                        line_num += 1;
                     }
                 }
             }
@@ -253,9 +266,10 @@ impl<'a> Scanner<'a> {
             .collect();
 
         let marker_offset = marker_position - line_start_position;
-        let line_number_string = format!("{line_number}. ");
+        let line_number_string = format!("{line_num}. ");
         let spaces = " ".repeat(line_number_string.len() + marker_offset - 1);
 
+        *line_number = line_num;
         Ok(format!("{line_number_string}{line}\n{spaces}^"))
     }
 
@@ -264,11 +278,11 @@ impl<'a> Scanner<'a> {
     /// Returns `None` if we are already at the end of the string/asked it
     /// to return outside bounds
     fn peek_current(&self) -> Option<&str> {
-        Self::peek_current_no_borrow(self.source, self.current)
+        Self::peek_no_borrow(self.source, self.current)
     }
     
-    fn peek_current_no_borrow(source: &str, current_index: usize) -> Option<&str> {
-        source.graphemes(true).nth(current_index)
+    fn peek_no_borrow(source: &str, peek_index: usize) -> Option<&str> {
+        source.graphemes(true).nth(peek_index)
     }
     
     fn is_newline(string: &str) -> bool {
@@ -276,6 +290,14 @@ impl<'a> Scanner<'a> {
             "\r\n" | "\n" => true, 
             _ => false
         }
+    }
+    
+    fn produce_error_with_location(&self, scanner_error_type: ScannerErrorType, location: usize) -> ScannerError {
+        ScannerError::new_with_location(scanner_error_type, location, self.source)
+    }
+
+    fn produce_error(&self, scanner_error_type: ScannerErrorType) -> ScannerError {
+        ScannerError::new(scanner_error_type, self.line)
     }
 }
 
@@ -291,10 +313,12 @@ impl ScannerError {
         ScannerError { error_type, line, location: None }
     }
 
-    pub fn new_with_location(error_type: ScannerErrorType, line: u32, marker_position: usize, source: &str) -> Self {
-        let location = Scanner::get_line_with_marker(source, marker_position)
+    pub fn new_with_location(error_type: ScannerErrorType, marker_position: usize, source: &str) -> Self {
+        let mut line_number: usize = 0;
+        
+        let location = Scanner::get_line_with_marker(source, marker_position, &mut line_number)
             .expect("Couldn't produce line with a marker");
-        ScannerError { error_type, line, location: Some(location) }
+        ScannerError { error_type, line: line_number as u32, location: Some(location) }
     }
 }
 
