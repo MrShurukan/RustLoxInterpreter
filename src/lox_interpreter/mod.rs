@@ -2,11 +2,11 @@
 mod token;
 mod scanner;
 
-use std::{fs, io};
+use crate::lox_interpreter::scanner::Scanner;
+use anyhow::Context;
 use std::io::Write;
 use std::process::exit;
-use anyhow::Context;
-use crate::lox_interpreter::scanner::{Scanner, ScannerError};
+use std::{fs, io};
 
 pub struct LoxInterpreter {
 }

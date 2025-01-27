@@ -1,7 +1,6 @@
 mod lox_interpreter;
 
 use crate::lox_interpreter::LoxInterpreter;
-use std::io::Write;
 use std::process::exit;
 use std::env;
 

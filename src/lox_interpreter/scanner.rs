@@ -1,9 +1,9 @@
-﻿use std::error::Error;
-use std::fmt::{format, Display, Formatter};
-use anyhow::bail;
-use unicode_segmentation::UnicodeSegmentation;
-use crate::lox_interpreter::token::Token;
+﻿use crate::lox_interpreter::token::Token;
 use crate::lox_interpreter::token_type::{LiteralType, PunctuationType, TokenType};
+use anyhow::bail;
+use std::error::Error;
+use std::fmt::{Display, Formatter};
+use unicode_segmentation::UnicodeSegmentation;
 
 pub struct Scanner<'a> {
     /// This is not meant to be modified. This field should stay read-only, as there is a cached
