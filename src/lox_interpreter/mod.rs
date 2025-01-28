@@ -50,7 +50,10 @@ impl LoxInterpreter {
                 continue;
             }
 
-            self.run(&trim).context("Couldn't run the prompt")?;
+            // Продолжаем работу интерпретатора независимо от результата этой строки
+            match self.run(&trim) {
+                Ok(_) | Err(_) => { },
+            };
         }
     }
 
