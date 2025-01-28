@@ -3,7 +3,6 @@ use crate::lox_interpreter::token_type::{LiteralType, PunctuationType, TokenType
 use anyhow::bail;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
-use std::iter::Scan;
 use unicode_segmentation::UnicodeSegmentation;
 
 pub struct Scanner<'a> {
@@ -26,16 +25,18 @@ impl<'a> Scanner<'a> {
             grapheme_count: source.graphemes(true).count() }
     }
 
-    pub fn scan_tokens(&mut self) -> Result<&[Token], ScannerError> {
+    pub fn scan_tokens(&mut self) -> Result<&[Token], Vec<ScannerError>> {
+        let mut errors: Vec<ScannerError> = Vec::new();
+        
         while !self.is_at_end() {
             // We are at the beginning of the next lexeme.
             self.start = self.current;
-
+            
             if let Err(err) = self.scan_token() {
                 if let ScannerErrorType::NoMoreTokens = err.error_type {
                     break;
                 } else {
-                    return Err(err);
+                    errors.push(err);
                 }
             }
         }
@@ -43,8 +44,13 @@ impl<'a> Scanner<'a> {
         self.tokens.push(
             Token { token_type: TokenType::EOF, lexeme: String::new(), line: self.line }
         );
-
-        Ok(self.tokens.as_slice())
+        
+        if errors.len() > 0 {
+            Err(errors)
+        }
+        else {
+            Ok(self.tokens.as_slice())
+        }
     }
 
     fn is_at_end(&self) -> bool {
@@ -168,41 +174,28 @@ impl<'a> Scanner<'a> {
         Ok(())
     }
 
-    // TODO: This function needs some serious simplification and refactoring
-    // TODO: This functions breaks if number is at the end of the file 
-    // (i.e. there are no additional 2 chars ahead) 
     fn parse_number_literal(&mut self) -> Result<(), ScannerError> {
-        while let Some(char) = Self::peek_no_borrow(self.source, self.current) {
-            if char.chars().any(|c| !c.is_ascii_digit()) {
-                break;
-            }
-
-            self.advance();
-        }
+        // Advance until there are no more digits
+        self.advance_while_digit();
 
         // Look for a fractional part.
-        let current_char = self.peek_current()
-            .ok_or_else(|| self.produce_error_with_location(
-                ScannerErrorType::IncorrectNumberToken, self.current)
-            )?;
-        let char_after_that = Self::peek_no_borrow(self.source, self.current + 1)
-            .ok_or_else(|| self.produce_error_with_location(
-                ScannerErrorType::IncorrectNumberToken, self.current)
-            )?;
+        let current_char = self.peek_current();
+        if let Some(current_char) = current_char {
+            // Using peek_no_borrow here because it's an arbitrary peek ahead function
+            let char_after_that = Self::peek_no_borrow(self.source, self.current + 1)
+                .ok_or_else(|| self.produce_error_with_location(
+                    ScannerErrorType::IncorrectNumberToken("Trailing literals are not supported".parse().unwrap()),
+                    self.current + 1)
+                )?;
 
-        if current_char == "." && char_after_that.chars().all(|c| c.is_ascii_digit()) {
-            // Consume the "."
-            self.advance();
-
-            while let Some(char) = Self::peek_no_borrow(self.source, self.current) {
-                if char.chars().any(|c| !c.is_ascii_digit()) {
-                    break;
-                }
-
+            if current_char == "." && char_after_that.chars().all(|c| c.is_ascii_digit()) {
+                // Consume the "."
                 self.advance();
+                // Advance until there are no more digits
+                self.advance_while_digit();
             }
         }
-
+        
         // Get the number itself value
         let str: String = self.source.graphemes(true)
             .skip(self.start)
@@ -210,7 +203,8 @@ impl<'a> Scanner<'a> {
             .collect();
 
         let value: f64 = str.parse().map_err(|_| self.produce_error_with_location(
-            ScannerErrorType::IncorrectNumberToken, self.current))?;
+            ScannerErrorType::IncorrectNumberToken("Couldn't convert to a double".parse().unwrap()),
+            self.current))?;
 
         let token = Token {
             lexeme: str,
@@ -222,9 +216,19 @@ impl<'a> Scanner<'a> {
         Ok(())
     }
 
+    fn advance_while_digit(&mut self) {
+        while let Some(char) = Self::peek_no_borrow(self.source, self.current) {
+            if char.chars().any(|c| !c.is_ascii_digit()) {
+                break;
+            }
+
+            self.advance();
+        }
+    }
+
     fn next_char_check(&mut self, next_char: &str,
-                           if_true: TokenType,
-                           if_false: TokenType) -> TokenType {
+                       if_true: TokenType,
+                       if_false: TokenType) -> TokenType {
 
         if self.next_matches(next_char) { if_true }
         else { if_false }
@@ -365,7 +369,8 @@ impl ScannerError {
 pub enum ScannerErrorType {
     UnknownToken(String),
     UnterminatedString,
-    IncorrectNumberToken,
+    // String is a "reason"
+    IncorrectNumberToken(String),
     NoMoreTokens
 }
 
@@ -378,7 +383,8 @@ impl Display for ScannerError {
         let output = match &self.error_type {
             ScannerErrorType::UnknownToken(lexeme) => format!("Unknown token ('{}')", lexeme),
             ScannerErrorType::UnterminatedString => "Unterminated string".parse().unwrap(),
-            ScannerErrorType::IncorrectNumberToken => "The number was written in an incorrect format".parse().unwrap(),
+            ScannerErrorType::IncorrectNumberToken(reason) 
+                => format!("The number was written in an incorrect format: {}", reason),
             ScannerErrorType::NoMoreTokens => "There were no more tokens to parse".parse().unwrap(),
 
             _ => format!("{:?}", self)

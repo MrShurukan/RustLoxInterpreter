@@ -3,7 +3,7 @@ mod token;
 mod scanner;
 
 use crate::lox_interpreter::scanner::Scanner;
-use anyhow::Context;
+use anyhow::{bail, Context};
 use std::io::Write;
 use std::process::exit;
 use std::{fs, io};
@@ -57,9 +57,17 @@ impl LoxInterpreter {
     fn run(&mut self, source: &str) -> anyhow::Result<()> {
         let mut scanner = Scanner::new(source);
         
-        let tokens = scanner.scan_tokens()?;
+        let tokens = scanner.scan_tokens();
+        if let Err(errors) = tokens {
+            println!("Scanning failed.\n");
+            for err in errors {
+                println!("{err}\n");
+            }
+            
+            bail!("Couldn't advance to interpreting");
+        }
         
-        for token in tokens {
+        for token in tokens.unwrap() {
             println!("{token:?}")
         }
         
