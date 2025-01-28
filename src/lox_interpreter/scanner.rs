@@ -111,7 +111,7 @@ impl<'a> Scanner<'a> {
                 }
                 // Multiline comment
                 else if self.next_matches("*") {
-                    self.multiline_comment();
+                    self.multiline_comment()?;
                 }
                 else {
                     self.add_token_type(P(PT::Slash));
@@ -243,25 +243,59 @@ impl<'a> Scanner<'a> {
         else {
             self.add_token_type(TokenType::Literal(LiteralType::Identifier(lexeme)));
         }
-        
+
         Ok(())
     }
-    
-    fn multiline_comment(&mut self) {
+
+    fn multiline_comment(&mut self) -> Result<(), ScannerError> {
+        // Remember where the multiline comment started
+        let multiline_comment_start = self.current;
+        
+        // Consume the "/" and the "*"
+        self.advance(); self.advance();
+        
+        let mut nesting_level = 1;
+
         while let Some(current_char) = self.peek_current() {
-            if Self::is_newline(current_char) { 
-                self.line += 1; 
+            if Self::is_newline(current_char) {
+                self.line += 1;
+            }
+            // I support nested multiline comments. We need to account for that
+            else if current_char == "/" {
+                let next_char = Self::peek_no_borrow(self.source, self.current + 1);
+                if next_char.is_some() && next_char.unwrap() == "*" {
+                    // Nesting located, consume the "/*" and increase the nesting_level
+                    self.advance(); self.advance();
+                    nesting_level += 1;
+                }
             }
             // If we encounter a star, that could mean we are at the end of the comment
             else if current_char == "*" {
                 let next_char = Self::peek_no_borrow(self.source, self.current + 1);
                 if next_char.is_some() && next_char.unwrap() == "/" {
-                    // We found the end! Consume the "/" and return
-                    self.advance(); self.advance();
-                    return;
+                    // We found the end of a block! Consume the "*" and "/" (latter if we are done)
+                    // Decrease the nesting_level
+                    // Check if we are out of nesting by making sure nesting_level == 0, otherwise continue
+                    self.advance();
+                    
+                    nesting_level -= 1;
+                    if nesting_level == 0 {
+                        self.advance();
+                        return Ok(());
+                    }
                 }
             }
             self.advance();
+        }
+        
+        // If we finished reading the source but never reached the end of a multiline - it's an error!
+        if nesting_level != 0 {
+            Err(self.produce_error_with_location(
+                ScannerErrorType::UnterminatedMultilineComment,
+                multiline_comment_start
+            ))
+        } else {
+            unreachable!();
         }
     }
 
@@ -408,7 +442,8 @@ pub enum ScannerErrorType {
     UnterminatedString,
     // String is a "reason"
     IncorrectNumberToken(String),
-    NoMoreTokens
+    NoMoreTokens,
+    UnterminatedMultilineComment
 }
 
 impl Error for ScannerError {}
@@ -423,6 +458,7 @@ impl Display for ScannerError {
             ScannerErrorType::IncorrectNumberToken(reason) 
                 => format!("The number was written in an incorrect format: {}", reason),
             ScannerErrorType::NoMoreTokens => "There were no more tokens to parse".parse().unwrap(),
+            ScannerErrorType::UnterminatedMultilineComment => "Multiline comment was not terminated".parse().unwrap(),
 
             _ => format!("{:?}", self)
         };
