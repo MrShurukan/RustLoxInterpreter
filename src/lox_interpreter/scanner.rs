@@ -1,8 +1,10 @@
-﻿use crate::lox_interpreter::token::Token;
-use crate::lox_interpreter::token_type::{LiteralType, PunctuationType, TokenType};
+﻿use std::collections::HashMap;
+use crate::lox_interpreter::token::Token;
+use crate::lox_interpreter::token_type::{LiteralType, PunctuationType, TokenType, KEYWORDS};
 use anyhow::bail;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
+use std::ops::Not;
 use unicode_segmentation::UnicodeSegmentation;
 
 pub struct Scanner<'a> {
@@ -42,7 +44,7 @@ impl<'a> Scanner<'a> {
         }
 
         self.tokens.push(
-            Token { token_type: TokenType::EOF, lexeme: String::new(), line: self.line }
+            Token { token_type: TokenType::EOF, line: self.line }
         );
         
         if errors.len() > 0 {
@@ -126,7 +128,12 @@ impl<'a> Scanner<'a> {
             // not graphemes
             number if number.chars().all(|x| x.is_ascii_digit()) => {
                 self.parse_number_literal()?;
-            }
+            },
+
+            // Identifiers and reserve words are a different story. Could be pretty complex.
+            alpha if alpha.chars().all(|x| x.is_alphabetic() || x == '_') => {
+                self.parse_alpha()?;
+            },
 
             _ => {
                 let error_type = ScannerErrorType::UnknownToken(String::from(c));
@@ -164,13 +171,7 @@ impl<'a> Scanner<'a> {
             .take(self.current - self.start - 2)
             .collect();
         
-        let token = Token {
-            lexeme: format!("\"{str}\""),
-            token_type: TokenType::Literal(LiteralType::String(str)),
-            line: self.line
-        };
-        
-        self.add_token(token);
+        self.add_token_type(TokenType::Literal(LiteralType::String(str)));
         Ok(())
     }
 
@@ -196,23 +197,14 @@ impl<'a> Scanner<'a> {
             }
         }
         
-        // Get the number itself value
-        let str: String = self.source.graphemes(true)
-            .skip(self.start)
-            .take(self.current - self.start)
-            .collect();
+        // Get the number itself
+        let str: String = self.get_current_lexeme();
 
         let value: f64 = str.parse().map_err(|_| self.produce_error_with_location(
             ScannerErrorType::IncorrectNumberToken("Couldn't convert to a double".parse().unwrap()),
             self.current))?;
 
-        let token = Token {
-            lexeme: str,
-            token_type: TokenType::Literal(LiteralType::Number(value)),
-            line: self.line
-        };
-
-        self.add_token(token);
+        self.add_token_type(TokenType::Literal(LiteralType::Number(value)));
         Ok(())
     }
 
@@ -224,6 +216,31 @@ impl<'a> Scanner<'a> {
 
             self.advance();
         }
+    }
+
+    // Identifiers and keywords
+    fn parse_alpha(&mut self) -> Result<(), ScannerError> {
+        while let Some(char) = self.peek_current() {
+            if !char.chars().all(|x| x.is_alphanumeric() || x == '_') {
+                break;
+            }
+
+            self.advance();
+        }
+
+        let lexeme = self.get_current_lexeme();
+
+        // Check if it's reserved
+        let keyword_type = KEYWORDS.get(lexeme.as_str());
+        if let Some(keyword_type) = keyword_type {
+            self.add_token_type(TokenType::Keyword(keyword_type))
+        }
+        // Otherwise it's just a user configured lexeme
+        else {
+            self.add_token_type(TokenType::Literal(LiteralType::Identifier(lexeme)));
+        }
+        
+        Ok(())
     }
 
     fn next_char_check(&mut self, next_char: &str,
@@ -249,15 +266,13 @@ impl<'a> Scanner<'a> {
         true
     }
 
-    fn add_token_type(&mut self, token_type: TokenType) {        
-        let take_count = self.current - self.start;
-        let lexeme = self.source.graphemes(true).skip(self.start).take(take_count).collect();
-        
-        self.tokens.push(Token { token_type, lexeme, line: self.line });
+    fn add_token_type(&mut self, token_type: TokenType) {
+        self.tokens.push(Token { token_type, line: self.line });
     }
-    
-    fn add_token(&mut self, token: Token) {
-        self.tokens.push(token);
+
+    fn get_current_lexeme(&mut self) -> String {
+        let take_count = self.current - self.start;
+        self.source.graphemes(true).skip(self.start).take(take_count).collect()
     }
 
     fn advance(&mut self) -> Option<&str> {        
