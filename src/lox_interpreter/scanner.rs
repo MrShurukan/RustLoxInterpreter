@@ -109,6 +109,10 @@ impl<'a> Scanner<'a> {
                         self.advance();
                     }
                 }
+                // Multiline comment
+                else if self.next_matches("*") {
+                    self.multiline_comment();
+                }
                 else {
                     self.add_token_type(P(PT::Slash));
                 }
@@ -241,6 +245,24 @@ impl<'a> Scanner<'a> {
         }
         
         Ok(())
+    }
+    
+    fn multiline_comment(&mut self) {
+        while let Some(current_char) = self.peek_current() {
+            if Self::is_newline(current_char) { 
+                self.line += 1; 
+            }
+            // If we encounter a star, that could mean we are at the end of the comment
+            else if current_char == "*" {
+                let next_char = Self::peek_no_borrow(self.source, self.current + 1);
+                if next_char.is_some() && next_char.unwrap() == "/" {
+                    // We found the end! Consume the "/" and return
+                    self.advance(); self.advance();
+                    return;
+                }
+            }
+            self.advance();
+        }
     }
 
     fn next_char_check(&mut self, next_char: &str,
