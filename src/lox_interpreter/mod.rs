@@ -1,6 +1,7 @@
 ﻿mod token_type;
 mod token;
 mod scanner;
+mod parser;
 
 use crate::lox_interpreter::scanner::Scanner;
 use anyhow::{bail, Context};

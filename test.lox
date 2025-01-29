@@ -10,6 +10,7 @@ let me = speak from my heart!
 Балдёж! */
 
 var test = "Hello!";
+var ё = "Язык";
 
 "Я поддерживаю русский"
 

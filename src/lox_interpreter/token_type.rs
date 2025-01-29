@@ -16,7 +16,8 @@ pub enum TokenType {
 pub enum LiteralType {
     Identifier(String),
     String(String),
-    Number(f64)
+    Number(f64),
+    Nil
 }
 
 lazy_static! {
