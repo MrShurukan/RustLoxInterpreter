@@ -1,82 +1,147 @@
-﻿use std::ops::Deref;
+﻿use std::any::Any;
+use std::iter::Peekable;
+use std::slice::Iter;
+use crate::lox_interpreter::expression::Expression;
 use crate::lox_interpreter::token::Token;
-use crate::lox_interpreter::token_type::LiteralType;
+use crate::lox_interpreter::token_type::{KeywordType as KT, KeywordType, LiteralType, PunctuationType as PT, PunctuationType, TokenType as TT, TokenType};
 
-#[derive(Debug)]
-pub enum Expression<'a> {
-    Binary { left: &'a Expression<'a>, operator: &'a Token, right: &'a Expression<'a> },
-    Grouping { expression: &'a Expression<'a> },
-    Literal { value: &'a LiteralType },
-    Unary { operator: &'a Token, right: &'a Expression<'a> }
+pub struct Parser<'a> {
+    tokens: &'a [Token]
 }
 
-impl Expression<'_> {
-    pub fn lisp_like_print(&self) -> String {
-        match self {
-            Self::Binary { left, operator, right } => {
-                Self::parenthesize(
-                    format!("{:?}", operator.token_type).as_str(),
-                    vec![left, right]
-                )
+// TODO: Try to improve on redundant boilerplate code
+impl Parser<'_> {
+    pub fn new(tokens: &[Token]) -> Parser {
+        Parser { tokens }
+    }
+
+    pub fn parse(&self) -> Vec<Expression> {
+        todo!()
+    }
+
+    fn expression<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Option<Expression<'a>> {
+        Self::equality(tokens)
+    }
+
+    // != ==
+    fn equality<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Option<Expression<'a>> {
+        let mut expr = Self::comparison(tokens)?;
+
+        while let TT::Punctuation(op @ (
+            PT::BangEqual | PT::EqualEqual)) = &tokens.peek()?.token_type {
+
+            tokens.next();
+            let right = Self::comparison(tokens)?;
+
+            expr = Expression::Binary {
+                left: Box::new(expr),
+                operator: op.to_owned(),
+                right: Box::new(right)
             }
-            Self::Grouping { expression } => {
-                Self::parenthesize(
-                    "group",
-                    vec![expression]
-                )
+        }
+
+        Some(expr)
+    }
+
+    // > >= < <=
+    fn comparison<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Option<Expression<'a>> {
+        let mut expr = Self::term(tokens)?;
+
+        while let TT::Punctuation(op @ (
+            PT::Greater | PT::GreaterEqual | PT::Less | PT::LessEqual)) = &tokens.peek()?.token_type {
+
+            tokens.next();
+            let right = Self::term(tokens)?;
+
+            expr = Expression::Binary {
+                left: Box::new(expr),
+                operator: op.to_owned(),
+                right: Box::new(right)
             }
-            Self::Literal { value } => {
-                match value {
-                    LiteralType::Identifier(identifier) => { identifier.to_owned() }
-                    LiteralType::String(string) => { string.to_owned() }
-                    LiteralType::Number(number) => { number.to_string() }
-                    LiteralType::Nil => { "nil".parse().unwrap() }
+        }
+
+        Some(expr)
+    }
+
+    // + -
+    fn term<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Option<Expression<'a>> {
+        let mut expr = Self::factor(tokens)?;
+
+        while let TT::Punctuation(op @ (
+            PunctuationType::Plus | PunctuationType::Minus)) = &tokens.peek()?.token_type {
+
+            tokens.next();
+            let right = Self::factor(tokens)?;
+
+            expr = Expression::Binary {
+                left: Box::new(expr),
+                operator: op.to_owned(),
+                right: Box::new(right)
+            }
+        }
+
+        Some(expr)
+    }
+
+    // * /
+    fn factor<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Option<Expression<'a>> {
+        let mut expr = Self::unary(tokens)?;
+
+        while let TT::Punctuation(op @ (
+            PunctuationType::Star | PunctuationType::Slash)) = &tokens.peek()?.token_type {
+
+            tokens.next();
+            let right = Self::unary(tokens)?;
+
+            expr = Expression::Binary {
+                left: Box::new(expr),
+                operator: op.to_owned(),
+                right: Box::new(right)
+            }
+        }
+
+        Some(expr)
+    }
+
+    // ! - (as unary operator)
+    fn unary<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Option<Expression<'a>> {
+        if let TT::Punctuation(op @ (
+            PunctuationType::Bang | PunctuationType::Minus)) = &tokens.peek()?.token_type {
+
+            tokens.next();
+            let right = Self::unary(tokens)?;
+
+            return Some(Expression::Unary {
+                operator: op.to_owned(),
+                right: Box::new(right)
+            });
+        }
+
+        Self::primary(tokens)
+    }
+
+    // Literals, groupings
+    fn primary<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Option<Expression<'a>> {
+        let result = match &tokens.peek()?.token_type {
+            TT::Literal(literal_type) => { Some(Expression::Literal { value: literal_type }) }
+            TT::Keyword(KeywordType::True) => { Some(Expression::Literal { value: &LiteralType::Boolean(true) }) }
+            TT::Keyword(KeywordType::False) => { Some(Expression::Literal { value: &LiteralType::Boolean(false) }) }
+            TT::Keyword(KeywordType::Nil) => { Some(Expression::Literal { value: &LiteralType::Nil }) }
+            TT::Punctuation(PT::LeftParen) => {
+                tokens.next();
+                let expr = Self::expression(tokens)?;
+                if let TT::Punctuation(PT::RightBrace) = &tokens.peek()?.token_type {
                 }
-            }
-            Self::Unary { operator, right } => {
-                Self::parenthesize(
-                    format!("{:?}", operator.token_type).as_str(),
-                    vec![right]
-                )
-            }
-        }
-    }
-
-    fn parenthesize(name: &str, expressions: Vec<&Expression>) -> String {
-        let mut output = String::new();
-
-        output.push('(');
-        output.push_str(name);
-
-        for expression in expressions {
-            output.push(' ');
-            output.push_str(expression.lisp_like_print().as_str())
-        }
-
-        output.push(')');
-
-        output
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::lox_interpreter::token_type::{PunctuationType, TokenType};
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let expression = Expression::Binary {
-            left: &Expression::Unary {
-                operator: &Token { token_type: TokenType::Punctuation(PunctuationType::Minus), line: 0 },
-                right: &Expression::Literal { value: &LiteralType::Number(123.0) }
+                else {
+                    println!("Expect ')' after expression.");
+                }
+                Some(Expression::Grouping { expression: Box::new(expr) })
             },
-            operator: &Token { token_type: TokenType::Punctuation(PunctuationType::Star), line: 0 },
-            right: &Expression::Grouping {
-                expression: &Expression::Literal { value: &LiteralType::Number(45.67) }
-            },
+            _ => { None }
         };
 
-        println!("{}", expression.lisp_like_print());
+        if result.is_some() { tokens.next(); }
+        result
     }
 }
+

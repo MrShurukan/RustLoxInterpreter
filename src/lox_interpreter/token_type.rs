@@ -4,7 +4,7 @@ use lazy_static::lazy_static;
 #[derive(Debug)]
 pub enum TokenType {
     Literal(LiteralType),
-    // static lifetime, as we willread from KEYWORDS HashMap
+    // static lifetime, as we will read from KEYWORDS HashMap
     // see that hashmap below in lazy_static! block
     Keyword(&'static KeywordType),
     Punctuation(PunctuationType),
@@ -17,6 +17,7 @@ pub enum LiteralType {
     Identifier(String),
     String(String),
     Number(f64),
+    Boolean(bool),
     Nil
 }
 
@@ -51,7 +52,7 @@ pub enum KeywordType {
     Print, Return, Super, This, True, Var, While,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum PunctuationType {
     // Single-character tokens.
     LeftParen, RightParen, LeftBrace, RightBrace,

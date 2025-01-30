@@ -2,6 +2,7 @@
 mod token;
 mod scanner;
 mod parser;
+mod expression;
 
 use crate::lox_interpreter::scanner::Scanner;
 use anyhow::{bail, Context};
