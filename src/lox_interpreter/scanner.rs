@@ -95,6 +95,8 @@ impl Scanner {
             "+" => self.add_token_type(P(PT::Plus)),
             ";" => self.add_token_type(P(PT::Semicolon)),
             "*" => self.add_token_type(P(PT::Star)),
+            "?" => self.add_token_type(P(PT::Question)),
+            ":" => self.add_token_type(P(PT::Colon)),
 
             // Check for multichar punctuation (by checking the next char)
             "!" => {

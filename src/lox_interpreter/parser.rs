@@ -16,10 +16,10 @@ pub struct Parser {
 
 
 macro_rules! parse_binary {
-    ($self:ident, $enum_types:pat_param, $expression:ident, $tokens:ident) => {
+    ($self:ident, $enum_types:pat_param, $expression:ident, $tokens:ident, $next_precedence:ident) => {
         while let TT::Punctuation(op @ $enum_types) = &Self::peek($tokens)?.token_type {
             $tokens.next();
-            let right = $self.comparison($tokens)?;
+            let right = $self.$next_precedence($tokens)?;
 
             $expression = Expression::Binary {
                 left: Box::new($expression),
@@ -40,13 +40,43 @@ impl Parser {
     }
 
     fn expression<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression<'a>, ParserError> {
-        self.comma(tokens)
+        self.ternary(tokens)
+    }
+
+    // expr ? expr : expr
+    fn ternary<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression<'a>, ParserError> {
+        let mut expr = self.comma(tokens)?;
+        
+        if let TT::Punctuation(PT::Question) = &Self::peek(tokens)?.token_type {
+            tokens.next();
+            let second = self.comma(tokens)?;
+            
+            let third_token = &Self::peek(tokens)?;
+            if let TT::Punctuation(PT::Colon) = third_token.token_type {
+                tokens.next();
+                let third = self.comma(tokens)?;
+
+                expr = Expression::Ternary {
+                    first: Box::new(expr),
+                    second: Box::new(second),
+                    third: Box::new(third)
+                }
+            }
+            else {
+                return Err(
+                    Self::get_error_marked_line(ParserErrorType::UnfinishedTernary, (*third_token).clone(), &self.source)
+                );
+            }
+        }
+        
+        
+        Ok(expr)
     }
 
     // expr, expr
     fn comma<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression<'a>, ParserError> {
         let mut expr = self.equality(tokens)?;
-        parse_binary!(self, PT::Comma, expr, tokens);
+        parse_binary!(self, PT::Comma, expr, tokens, equality);
 
         Ok(expr)
     }
@@ -54,7 +84,7 @@ impl Parser {
     // != ==
     fn equality<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression<'a>, ParserError> {
         let mut expr = self.comparison(tokens)?;
-        parse_binary!(self, (PT::BangEqual | PT::EqualEqual), expr, tokens);
+        parse_binary!(self, (PT::BangEqual | PT::EqualEqual), expr, tokens, comparison);
 
         Ok(expr)
     }
@@ -62,7 +92,7 @@ impl Parser {
     // > >= < <=
     fn comparison<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression<'a>, ParserError> {
         let mut expr = self.term(tokens)?;
-        parse_binary!(self, (PT::Greater | PT::GreaterEqual | PT::Less | PT::LessEqual), expr, tokens);
+        parse_binary!(self, (PT::Greater | PT::GreaterEqual | PT::Less | PT::LessEqual), expr, tokens, term);
 
         Ok(expr)
     }
@@ -70,7 +100,7 @@ impl Parser {
     // + -
     fn term<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression<'a>, ParserError> {
         let mut expr = self.factor(tokens)?;
-        parse_binary!(self, (PT::Plus | PT::Minus), expr, tokens);
+        parse_binary!(self, (PT::Plus | PT::Minus), expr, tokens, factor);
 
         Ok(expr)
     }
@@ -78,7 +108,7 @@ impl Parser {
     // * /
     fn factor<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression<'a>, ParserError> {
         let mut expr = self.unary(tokens)?;
-        parse_binary!(self, (PunctuationType::Star | PunctuationType::Slash), expr, tokens);
+        parse_binary!(self, (PunctuationType::Star | PunctuationType::Slash), expr, tokens, unary);
 
         Ok(expr)
     }
@@ -191,7 +221,8 @@ pub enum ParserErrorType {
     RanOutOfTokens,
     IncorrectToken,
     /// Internal, not supposed to occur
-    IncorrectLineNumberProvided(usize)
+    IncorrectLineNumberProvided(usize),
+    UnfinishedTernary
 }
 
 impl ParserError {
@@ -219,7 +250,8 @@ impl Display for ParserError {
             ParserErrorType::RanOutOfTokens => "No more tokens to parse",
             ParserErrorType::IncorrectToken => "Incorrect token in this place",
             ParserErrorType::IncorrectLineNumberProvided(line) =>
-                &*format!("[Internal parser error] Couldn't get {} as a line number (token: {:?})", line, self.token)
+                &*format!("[Internal parser error] Couldn't get {} as a line number (token: {:?})", line, self.token),
+            ParserErrorType::UnfinishedTernary => "Incorrect ternary operator"
         };
 
         write!(f, "{error_header}: {}", output)?;

@@ -3,6 +3,7 @@
 #[derive(Debug)]
 pub enum Expression<'a> {
     Binary { left: Box<Expression<'a>>, operator: PunctuationType, right: Box<Expression<'a>> },
+    Ternary { first: Box<Expression<'a>>, second: Box<Expression<'a>>, third: Box<Expression<'a>> },
     Grouping { expression: Box<Expression<'a>> },
     Literal { value: &'a LiteralType },
     Unary { operator: PunctuationType, right: Box<Expression<'a>> }
@@ -37,6 +38,12 @@ impl Expression<'_> {
                     format!("{:?}", operator).as_str(),
                     vec![right]
                 )
+            }
+            Self::Ternary { first, second, third } => {
+                format!("{} ? {} : {}", 
+                        first.lisp_like_print(),
+                        second.lisp_like_print(),
+                        third.lisp_like_print())
             }
         }
     }
