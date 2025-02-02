@@ -9,6 +9,9 @@ use anyhow::{bail, Context};
 use std::io::Write;
 use std::process::exit;
 use std::{fs, io};
+use crate::lox_interpreter::parser::Parser;
+use crate::lox_interpreter::token::Token;
+use crate::lox_interpreter::token_type::{PunctuationType, TokenType};
 
 pub struct LoxInterpreter {
 }
@@ -22,7 +25,7 @@ impl LoxInterpreter {
         let contents = fs::read_to_string(file_name)
             .context("Can't read the specified file")?;
 
-        let result = self.run(&contents);
+        let result = Self::run(&contents);
         match result {
             Err(err) => {
                 println!("{}", err);
@@ -53,14 +56,14 @@ impl LoxInterpreter {
             }
 
             // Продолжаем работу интерпретатора независимо от результата этой строки
-            match self.run(&trim) {
+            match Self::run(&trim) {
                 Ok(_) | Err(_) => { },
             };
         }
     }
 
-    fn run(&mut self, source: &str) -> anyhow::Result<()> {
-        let mut scanner = Scanner::new(source);
+    fn run(source: &str) -> anyhow::Result<()> {
+        let scanner = Scanner::new(source.to_owned());
         
         let tokens = scanner.scan_tokens();
         if let Err(errors) = tokens {
@@ -69,13 +72,23 @@ impl LoxInterpreter {
                 println!("{err}\n");
             }
             
+            bail!("Couldn't advance to parsing");
+        }
+
+        // let tokens_vec = tokens.unwrap();
+        let tokens_vec = vec![Token { token_type: TokenType::Punctuation(PunctuationType::EqualEqual), line: 1 }];
+        let parser = Parser::new(tokens_vec);
+        let expression = parser.parse();
+
+        if let Err(err) = expression {
+            println!("Parsing failed.\n");
+            println!("{err}\n");
+        
             bail!("Couldn't advance to interpreting");
         }
         
-        for token in tokens.unwrap() {
-            println!("{token:?}")
-        }
-        
+        println!("{:?}", expression?);
+
         Ok(())
     }
 }

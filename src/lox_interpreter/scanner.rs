@@ -5,10 +5,10 @@ use std::error::Error;
 use std::fmt::{Display, Formatter};
 use unicode_segmentation::UnicodeSegmentation;
 
-pub struct Scanner<'a> {
+pub struct Scanner {
     /// This is not meant to be modified. This field should stay read-only, as there is a cached
     /// version of how many graphemes are inside there (see `grapheme_count`).
-    source: &'a str,
+    source: String,
     /// This is a cached field with the value of `self.source.graphemes(true).count()`
     /// If this is changed, code will no longer know the correct grapheme iterator length.
     grapheme_count: usize,
@@ -19,13 +19,13 @@ pub struct Scanner<'a> {
     line: u32,
 }
 
-impl<'a> Scanner<'a> {
-    pub fn new(source: &'a str) -> Self {
-        Scanner { source, tokens: vec![], start: 0, current: 0, line: 1, 
+impl Scanner {
+    pub fn new(source: String) -> Self {
+        Scanner { source: source.to_owned(), tokens: vec![], start: 0, current: 0, line: 1,
             grapheme_count: source.graphemes(true).count() }
     }
 
-    pub fn scan_tokens(&mut self) -> Result<&[Token], Vec<ScannerError>> {
+    pub fn scan_tokens(mut self) -> Result<Vec<Token>, Vec<ScannerError>> {
         let mut errors: Vec<ScannerError> = Vec::new();
         
         while !self.is_at_end() {
@@ -49,7 +49,7 @@ impl<'a> Scanner<'a> {
             Err(errors)
         }
         else {
-            Ok(self.tokens.as_slice())
+            Ok(self.tokens)
         }
     }
 
@@ -185,7 +185,7 @@ impl<'a> Scanner<'a> {
         let current_char = self.peek_current();
         if let Some(current_char) = current_char {
             // Using peek_no_borrow here because it's an arbitrary peek ahead function
-            let char_after_that = Self::peek_no_borrow(self.source, self.current + 1)
+            let char_after_that = Self::peek_no_borrow(&self.source, self.current + 1)
                 .ok_or_else(|| self.produce_error_with_location(
                     ScannerErrorType::IncorrectNumberToken("Trailing literals are not supported".parse().unwrap()),
                     self.current + 1)
@@ -211,7 +211,7 @@ impl<'a> Scanner<'a> {
     }
 
     fn advance_while_digit(&mut self) {
-        while let Some(char) = Self::peek_no_borrow(self.source, self.current) {
+        while let Some(char) = Self::peek_no_borrow(&self.source, self.current) {
             if char.chars().any(|c| !c.is_ascii_digit()) {
                 break;
             }
@@ -260,7 +260,7 @@ impl<'a> Scanner<'a> {
             }
             // I support nested multiline comments. We need to account for that
             else if current_char == "/" {
-                let next_char = Self::peek_no_borrow(self.source, self.current + 1);
+                let next_char = Self::peek_no_borrow(&self.source, self.current + 1);
                 if next_char.is_some() && next_char.unwrap() == "*" {
                     // Nesting located, consume the "/*" and increase the nesting_level
                     self.advance(); self.advance();
@@ -269,7 +269,7 @@ impl<'a> Scanner<'a> {
             }
             // If we encounter a star, that could mean we are at the end of the comment
             else if current_char == "*" {
-                let next_char = Self::peek_no_borrow(self.source, self.current + 1);
+                let next_char = Self::peek_no_borrow(&self.source, self.current + 1);
                 if next_char.is_some() && next_char.unwrap() == "/" {
                     // We found the end of a block! Consume the "*" and "/" (latter if we are done)
                     // Decrease the nesting_level
@@ -330,7 +330,7 @@ impl<'a> Scanner<'a> {
     }
 
     fn advance(&mut self) -> Option<&str> {        
-        let char_at_current = Self::peek_no_borrow(self.source, self.current);
+        let char_at_current = Self::peek_no_borrow(&self.source, self.current);
         self.current += 1;
 
         char_at_current
@@ -390,10 +390,10 @@ impl<'a> Scanner<'a> {
     /// Returns `None` if we are already at the end of the string/asked it
     /// to return outside bounds
     fn peek_current(&self) -> Option<&str> {
-        Self::peek_no_borrow(self.source, self.current)
+        Self::peek_no_borrow(&self.source, self.current)
     }
     
-    fn peek_no_borrow(source: &str, peek_index: usize) -> Option<&str> {
+    fn peek_no_borrow(source: &String, peek_index: usize) -> Option<&str> {
         source.graphemes(true).nth(peek_index)
     }
     
@@ -405,7 +405,7 @@ impl<'a> Scanner<'a> {
     }
 
     fn produce_error_with_location(&self, scanner_error_type: ScannerErrorType, location: usize) -> ScannerError {
-        ScannerError::new_with_location(scanner_error_type, location, self.source)
+        ScannerError::new_with_location(scanner_error_type, location, &*self.source)
     }
 
     fn produce_error(&self, scanner_error_type: ScannerErrorType) -> ScannerError {

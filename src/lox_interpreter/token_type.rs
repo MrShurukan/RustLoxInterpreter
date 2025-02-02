@@ -1,7 +1,7 @@
 ﻿use std::collections::HashMap;
 use lazy_static::lazy_static;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TokenType {
     Literal(LiteralType),
     // static lifetime, as we will read from KEYWORDS HashMap
@@ -12,7 +12,7 @@ pub enum TokenType {
     EOF
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum LiteralType {
     Identifier(String),
     String(String),
