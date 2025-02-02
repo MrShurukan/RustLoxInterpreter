@@ -1,10 +1,8 @@
-﻿use std::collections::HashMap;
-use crate::lox_interpreter::token::Token;
+﻿use crate::lox_interpreter::token::Token;
 use crate::lox_interpreter::token_type::{LiteralType, PunctuationType, TokenType, KEYWORDS};
 use anyhow::bail;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
-use std::ops::Not;
 use unicode_segmentation::UnicodeSegmentation;
 
 pub struct Scanner<'a> {
@@ -450,7 +448,7 @@ impl Error for ScannerError {}
 impl Display for ScannerError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let error_header =
-            format!("[line {}] Error", self.line);
+            format!("[line {}] Scanner Error", self.line);
 
         let output = match &self.error_type {
             ScannerErrorType::UnknownToken(lexeme) => format!("Unknown token ('{}')", lexeme),
@@ -458,9 +456,7 @@ impl Display for ScannerError {
             ScannerErrorType::IncorrectNumberToken(reason) 
                 => format!("The number was written in an incorrect format: {}", reason),
             ScannerErrorType::NoMoreTokens => "There were no more tokens to parse".parse().unwrap(),
-            ScannerErrorType::UnterminatedMultilineComment => "Multiline comment was not terminated".parse().unwrap(),
-
-            _ => format!("{:?}", self)
+            ScannerErrorType::UnterminatedMultilineComment => "Multiline comment was not terminated".parse().unwrap()
         };
 
         write!(f, "{error_header}: {}", output)?;

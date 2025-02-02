@@ -1,5 +1,4 @@
-﻿use crate::lox_interpreter::token::Token;
-use crate::lox_interpreter::token_type::{LiteralType, PunctuationType, TokenType};
+﻿use crate::lox_interpreter::token_type::{LiteralType, PunctuationType};
 
 #[derive(Debug)]
 pub enum Expression<'a> {
@@ -61,8 +60,8 @@ impl Expression<'_> {
 
 #[cfg(test)]
 mod tests {
-    use crate::lox_interpreter::token_type::{PunctuationType, TokenType};
     use super::*;
+    use crate::lox_interpreter::token_type::PunctuationType;
 
     #[test]
     fn small_expression_test() {
