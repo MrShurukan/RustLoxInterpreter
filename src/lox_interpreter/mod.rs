@@ -75,9 +75,8 @@ impl LoxInterpreter {
             bail!("Couldn't advance to parsing");
         }
 
-        // let tokens_vec = tokens.unwrap();
-        let tokens_vec = vec![Token { token_type: TokenType::Punctuation(PunctuationType::EqualEqual), line: 1 }];
-        let parser = Parser::new(tokens_vec);
+        let tokens_vec = tokens.unwrap();
+        let parser = Parser::new(tokens_vec, source.to_owned());
         let expression = parser.parse();
 
         if let Err(err) = expression {

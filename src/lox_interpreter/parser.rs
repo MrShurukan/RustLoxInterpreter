@@ -2,22 +2,24 @@
 use crate::lox_interpreter::token::Token;
 use crate::lox_interpreter::token_type::{KeywordType as KT, LiteralType, PunctuationType as PT, PunctuationType, TokenType as TT, TokenType};
 use std::error::Error;
-use std::fmt::{Display, Formatter};
+use std::fmt::{format, Display, Formatter};
 use std::iter::Peekable;
 use std::slice::Iter;
+use anyhow::bail;
+use unicode_segmentation::UnicodeSegmentation;
 
 pub struct Parser {
     tokens: Vec<Token>,
-    // /// Reference to an original string to point out errors with a location
-    // source: String
+    /// Reference to an original string to point out errors with a location
+    source: String
 }
 
 
 macro_rules! parse_binary {
-    ($enum_types:pat_param, $expression:ident, $tokens:ident) => {
+    ($self:ident, $enum_types:pat_param, $expression:ident, $tokens:ident) => {
         while let TT::Punctuation(op @ $enum_types) = &Self::peek($tokens)?.token_type {
             $tokens.next();
-            let right = Self::comparison($tokens)?;
+            let right = $self.comparison($tokens)?;
 
             $expression = Expression::Binary {
                 left: Box::new($expression),
@@ -29,56 +31,56 @@ macro_rules! parse_binary {
 }
 
 impl Parser {
-    pub fn new(tokens: Vec<Token>) -> Self {
-        Self { tokens }
+    pub fn new(tokens: Vec<Token>, source: String) -> Self {
+        Self { tokens, source }
     }
 
     pub fn parse(&self) -> Result<Vec<Expression>, ParserError> {
-        Ok(vec![Self::expression(&mut self.tokens.iter().peekable())?])
+        Ok(vec![self.expression(&mut self.tokens.iter().peekable())?])
     }
 
-    fn expression<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression<'a>, ParserError> {
-        Self::equality(tokens)
+    fn expression<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression<'a>, ParserError> {
+        self.equality(tokens)
     }
 
     // != ==
-    fn equality<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression<'a>, ParserError> {
+    fn equality<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression<'a>, ParserError> {
 
-        let mut expr = Self::comparison(tokens)?;
-        parse_binary!((PT::BangEqual | PT::EqualEqual), expr, tokens);
+        let mut expr = self.comparison(tokens)?;
+        parse_binary!(self, (PT::BangEqual | PT::EqualEqual), expr, tokens);
 
         Ok(expr)
     }
 
     // > >= < <=
-    fn comparison<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression<'a>, ParserError> {
-        let mut expr = Self::term(tokens)?;
-        parse_binary!((PT::Greater | PT::GreaterEqual | PT::Less | PT::LessEqual), expr, tokens);
+    fn comparison<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression<'a>, ParserError> {
+        let mut expr = self.term(tokens)?;
+        parse_binary!(self, (PT::Greater | PT::GreaterEqual | PT::Less | PT::LessEqual), expr, tokens);
 
         Ok(expr)
     }
 
     // + -
-    fn term<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression<'a>, ParserError> {
-        let mut expr = Self::factor(tokens)?;
-        parse_binary!((PT::Plus | PT::Minus), expr, tokens);
+    fn term<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression<'a>, ParserError> {
+        let mut expr = self.factor(tokens)?;
+        parse_binary!(self, (PT::Plus | PT::Minus), expr, tokens);
 
         Ok(expr)
     }
 
     // * /
-    fn factor<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression<'a>, ParserError> {
-        let mut expr = Self::unary(tokens)?;
-        parse_binary!((PunctuationType::Star | PunctuationType::Slash), expr, tokens);
+    fn factor<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression<'a>, ParserError> {
+        let mut expr = self.unary(tokens)?;
+        parse_binary!(self, (PunctuationType::Star | PunctuationType::Slash), expr, tokens);
 
         Ok(expr)
     }
 
     // ! - (as unary operator)
-    fn unary<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression<'a>, ParserError> {
+    fn unary<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression<'a>, ParserError> {
         if let TT::Punctuation(op @ (PT::Bang | PT::Minus)) = &Self::peek(tokens)?.token_type {
             tokens.next();
-            let right = Self::unary(tokens)?;
+            let right = self.unary(tokens)?;
 
             return Ok(Expression::Unary {
                 operator: op.to_owned(),
@@ -86,11 +88,11 @@ impl Parser {
             });
         }
 
-        Self::primary(tokens)
+        self.primary(tokens)
     }
 
     // Literals, groupings
-    fn primary<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression<'a>, ParserError> {
+    fn primary<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression<'a>, ParserError> {
         let token = Self::peek(tokens)?;
 
         let result = match &token.token_type {
@@ -100,22 +102,20 @@ impl Parser {
             TT::Keyword(KT::Nil) => { Some(Expression::Literal { value: &LiteralType::Nil }) }
             TT::Punctuation(PT::LeftParen) => {
                 tokens.next();
-                let expr = Self::expression(tokens)?;
+                let expr = self.expression(tokens)?;
                 let next_token = tokens.peek();
                 if next_token.is_none() {
                     Self::report_non_critical(
-                        ParserError::new(ParserErrorType::UnclosedBraces, (*token).clone())
+                        ParserError::new(ParserErrorType::UnclosedParenthesis, (*token).clone())
                     )
                 }
                 else {
                     let next_token = next_token.unwrap();
-                    if let TT::Punctuation(PT::RightBrace) = next_token.token_type {
-                        // Consume the ')'
-                        tokens.next();
-                    }
-                    else {
-                        Self::report_non_critical(
-                            ParserError::new(ParserErrorType::UnclosedBraces, (*next_token).clone())
+                    match next_token.token_type {
+                        TT::Punctuation(PT::RightParen) => {},
+                        
+                        _ => Self::report_non_critical(
+                            ParserError::new(ParserErrorType::UnclosedParenthesis, (*next_token).clone())
                         )
                     }
                 }
@@ -126,7 +126,7 @@ impl Parser {
         };
 
         if result.is_some() { tokens.next(); }
-        result.ok_or_else(|| ParserError::new(ParserErrorType::UnknownToken, (*token).clone()) )
+        result.ok_or_else(|| Self::get_error_marked_line(ParserErrorType::IncorrectToken, (*token).clone(), &self.source))
     }
 
     fn peek<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Result<&'a Token, ParserError> {
@@ -140,32 +140,53 @@ impl Parser {
     }
 
     fn report_non_critical(error: ParserError) {
-        println!("{error:?}")
+        println!("{error}")
+    }
+
+    fn get_error_marked_line(error_type: ParserErrorType, token: Token, source: &str) -> ParserError {
+        let line = source.split("\n").nth(token.line - 1);
+        if line.is_none() {
+            return ParserError {
+                error_type: ParserErrorType::IncorrectLineNumberProvided(token.line), token,
+                location: None };
+        }
+
+        let line = line.unwrap();
+        let line_number_string = format!("{}. ", token.line);
+        let spaces = " ".repeat(line_number_string.len() + token.line_offset - 1);
+        let marker = "^".repeat(token.lexeme_size);
+
+        let location = format!("{line_number_string}{line}\n{spaces}{marker}");
+        ParserError { location: Some(location), error_type, token }
     }
 }
 
 #[derive(Debug)]
 pub struct ParserError {
     error_type: ParserErrorType,
-    token: Token
+    token: Token,
+    location: Option<String>
 }
 
 #[derive(Debug)]
 pub enum ParserErrorType {
-    UnclosedBraces,
+    UnclosedParenthesis,
     RanOutOfTokens,
-    UnknownToken
+    IncorrectToken,
+    /// Internal, not supposed to occur
+    IncorrectLineNumberProvided(usize)
 }
 
 impl ParserError {
     pub fn new(error_type: ParserErrorType, token: Token) -> ParserError {
-        ParserError { error_type, token }
+        ParserError { error_type, token, location: None }
     }
 
     pub fn new_without_token<'a>(error_type: ParserErrorType) -> ParserError {
         ParserError {
             error_type,
-            token: Token { token_type: TokenType::EOF, line: 0 }
+            token: Token { token_type: TokenType::EOF, line: 0, lexeme_size: 0, line_offset: 0 },
+            location: None
         }
     }
 }
@@ -177,63 +198,18 @@ impl Display for ParserError {
             format!("[line {}] Parser Error", self.token.line);
 
         let output = match &self.error_type {
-            ParserErrorType::UnclosedBraces => "Unclosed braces",
+            ParserErrorType::UnclosedParenthesis => "Unclosed parenthesis",
             ParserErrorType::RanOutOfTokens => "No more tokens to parse",
-            ParserErrorType::UnknownToken => "Unknown token in this place (don't know how to parse)"
+            ParserErrorType::IncorrectToken => "Incorrect token in this place",
+            ParserErrorType::IncorrectLineNumberProvided(line) =>
+                &*format!("[Internal parser error] Couldn't get {} as a line number (token: {:?})", line, self.token)
         };
 
         write!(f, "{error_header}: {}", output)?;
-        // if let Some(location) = &self.location {
-        //     write!(f, "\n\nHappened here:\n{}", location)?;
-        // }
+        if let Some(location) = &self.location {
+            write!(f, "\n\nHappened here:\n{}", location)?;
+        }
 
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::lox_interpreter::parser::Parser;
-    use crate::lox_interpreter::token::Token;
-    use crate::lox_interpreter::token_type::{LiteralType, PunctuationType, TokenType};
-
-    #[test]
-    fn medium_expression_test() {
-        let tokens = vec![Token {
-            token_type: TokenType::Literal(LiteralType::Number(123.0)),
-            line: 1
-        }, Token {
-            token_type: TokenType::Punctuation(PunctuationType::EqualEqual),
-            line: 1
-        }, Token {
-            token_type: TokenType::Literal(LiteralType::Number(321.0)),
-            line: 1
-        }, Token {
-            token_type: TokenType::Punctuation(PunctuationType::BangEqual),
-            line: 1
-        }, Token {
-            token_type: TokenType::Literal(LiteralType::String("Test".parse().unwrap())),
-            line: 1
-        }, Token {
-            token_type: TokenType::EOF,
-            line: 1
-        }];
-
-        let parser = Parser::new(tokens);
-        println!("{:?}", parser.parse());
-    }
-
-    #[test]
-    fn small_expression_test() {
-        let tokens = vec![Token {
-            token_type: TokenType::Literal(LiteralType::Number(123.0)),
-            line: 1
-        }, Token {
-            token_type: TokenType::EOF,
-            line: 1
-        }];
-
-        let parser = Parser::new(tokens);
-        println!("{:?}", parser.parse());
     }
 }

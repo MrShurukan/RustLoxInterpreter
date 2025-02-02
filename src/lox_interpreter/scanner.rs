@@ -16,12 +16,28 @@ pub struct Scanner {
 
     start: usize,
     current: usize,
-    line: u32,
+    line: usize,
+    current_from_line_start: usize
+}
+
+macro_rules! advance_current {
+    ($self:ident) => {
+        $self.current += 1;
+        $self.current_from_line_start += 1;
+    };
+}
+
+macro_rules! advance_line {
+    ($self:ident) => {
+        $self.line += 1;
+        $self.current_from_line_start = 0;
+    };
 }
 
 impl Scanner {
     pub fn new(source: String) -> Self {
-        Scanner { source: source.to_owned(), tokens: vec![], start: 0, current: 0, line: 1,
+        Scanner { source: source.to_owned(), tokens: vec![], start: 0, 
+            current: 0, line: 1, current_from_line_start: 0, 
             grapheme_count: source.graphemes(true).count() }
     }
 
@@ -42,7 +58,8 @@ impl Scanner {
         }
 
         self.tokens.push(
-            Token { token_type: TokenType::EOF, line: self.line }
+            Token { token_type: TokenType::EOF, line: self.line, 
+                lexeme_size: 0, line_offset: 0 }
         );
         
         if errors.len() > 0 {
@@ -121,7 +138,7 @@ impl Scanner {
             "\r" => { },
             "\t" => { },
             
-            "\n" | "\r\n" => self.line += 1,
+            "\n" | "\r\n" => { advance_line!(self); },
 
             // Literals
             "\"" => self.parse_string_literal()?,
@@ -256,7 +273,7 @@ impl Scanner {
 
         while let Some(current_char) = self.peek_current() {
             if Self::is_newline(current_char) {
-                self.line += 1;
+                advance_line!(self);
             }
             // I support nested multiline comments. We need to account for that
             else if current_char == "/" {
@@ -316,12 +333,15 @@ impl Scanner {
             }
         }
 
-        self.current += 1;
+        advance_current!(self);
         true
     }
-
+    
     fn add_token_type(&mut self, token_type: TokenType) {
-        self.tokens.push(Token { token_type, line: self.line });
+        let lexeme_size = self.current - self.start;
+        self.tokens.push(Token { token_type, line: self.line, 
+            line_offset: self.current_from_line_start - lexeme_size + 1, lexeme_size
+        });
     }
 
     fn get_current_lexeme(&mut self) -> String {
@@ -331,7 +351,7 @@ impl Scanner {
 
     fn advance(&mut self) -> Option<&str> {        
         let char_at_current = Self::peek_no_borrow(&self.source, self.current);
-        self.current += 1;
+        advance_current!(self);
 
         char_at_current
     }
@@ -416,12 +436,12 @@ impl Scanner {
 #[derive(Debug)]
 pub struct ScannerError {
     error_type: ScannerErrorType,
-    line: u32,
+    line: usize,
     location: Option<String>
 }
 
 impl ScannerError {
-    pub fn new(error_type: ScannerErrorType, line: u32) -> Self {
+    pub fn new(error_type: ScannerErrorType, line: usize) -> Self {
         ScannerError { error_type, line, location: None }
     }
 
@@ -430,7 +450,7 @@ impl ScannerError {
 
         let location = Scanner::get_line_with_marker(source, marker_position, &mut line_number)
             .expect("Couldn't produce line with a marker");
-        ScannerError { error_type, line: line_number as u32, location: Some(location) }
+        ScannerError { error_type, line: line_number, location: Some(location) }
     }
 }
 
