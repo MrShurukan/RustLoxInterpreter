@@ -39,6 +39,44 @@ impl Parser {
         Ok(vec![self.expression(&mut self.tokens.iter().peekable())?])
     }
 
+    /// The goal of this method is to align parser with a next statement
+    /// after error was found somewhere.
+    ///
+    /// Say, an incorrect ternary `1 ? : 2` - this won't parse very well.
+    /// If we just continue marching forward from encountering that ":" - we will report
+    /// a lot of errors down the line that may not be truthful (phantom errors).
+    ///
+    /// This method attempts to minimize those by aligning with the next statement.
+    /// It's not 100% correct, but it's good enough
+    fn synchronize(tokens: &mut Peekable<Iter<Token>>) {
+        let current_token = tokens.peek();
+        // If we ran out of tokens - we're done already
+        if current_token.is_none() {
+            return;
+        }
+
+        let mut old_token_type = current_token.unwrap().token_type.to_owned();
+        while let Some(token) = tokens.next() {
+            match old_token_type {
+                // A semicolon is a very clear statement boundary
+                TokenType::Punctuation(PT::Semicolon) => { return; },
+                // Continue otherwise
+                _ => {}
+            }
+            
+            match token.token_type {
+                // Keyword is a nice way to know we are aligned
+                TokenType::Keyword(_) => { return; }
+                // Just keep on marching otherwise
+                _ => {}
+            }
+
+            old_token_type = token.token_type.to_owned();
+        }
+        
+        tokens.next();
+    }
+
     fn expression<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression<'a>, ParserError> {
         self.ternary(tokens)
     }
@@ -46,7 +84,7 @@ impl Parser {
     // expr ? expr : expr
     fn ternary<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression<'a>, ParserError> {
         let mut expr = self.comma(tokens)?;
-        
+
         let question_token = &Self::peek(tokens)?;
         if let TT::Punctuation(PT::Question) = question_token.token_type {
             tokens.next();
