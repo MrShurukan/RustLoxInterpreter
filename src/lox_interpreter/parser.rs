@@ -47,10 +47,11 @@ impl Parser {
     fn ternary<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression<'a>, ParserError> {
         let mut expr = self.comma(tokens)?;
         
-        if let TT::Punctuation(PT::Question) = &Self::peek(tokens)?.token_type {
+        let question_token = &Self::peek(tokens)?;
+        if let TT::Punctuation(PT::Question) = question_token.token_type {
             tokens.next();
             let second = self.comma(tokens)?;
-            
+
             let third_token = &Self::peek(tokens)?;
             if let TT::Punctuation(PT::Colon) = third_token.token_type {
                 tokens.next();
@@ -64,12 +65,12 @@ impl Parser {
             }
             else {
                 return Err(
-                    Self::get_error_marked_line(ParserErrorType::UnfinishedTernary, (*third_token).clone(), &self.source)
+                    Self::get_error_marked_line(ParserErrorType::UnfinishedTernary, (*question_token).clone(), &self.source)
                 );
             }
         }
-        
-        
+
+
         Ok(expr)
     }
 
@@ -150,7 +151,7 @@ impl Parser {
                     let next_token = next_token.unwrap();
                     match next_token.token_type {
                         TT::Punctuation(PT::RightParen) => {},
-                        
+
                         _ => Self::report_non_critical(
                             ParserError::new(ParserErrorType::UnclosedParenthesis, (*next_token).clone())
                         )

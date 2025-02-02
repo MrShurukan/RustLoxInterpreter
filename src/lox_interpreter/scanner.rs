@@ -202,20 +202,26 @@ impl Scanner {
 
         // Look for a fractional part.
         let current_char = self.peek_current();
-        if let Some(current_char) = current_char {
-            // Using peek_no_borrow here because it's an arbitrary peek ahead function
-            let char_after_that = Self::peek_no_borrow(&self.source, self.current + 1)
-                .ok_or_else(|| self.produce_error_with_location(
-                    ScannerErrorType::IncorrectNumberToken("Trailing literals are not supported".parse().unwrap()),
-                    self.current + 1)
-                )?;
-
-            if current_char == "." && char_after_that.chars().all(|c| c.is_ascii_digit()) {
-                // Consume the "."
-                self.advance();
-                // Advance until there are no more digits
-                self.advance_while_digit();
-            }
+        match current_char {
+            Some(current_char) if current_char == "." => {
+                // Using peek_no_borrow here because it's an arbitrary peek ahead function
+                let char_after_that = Self::peek_no_borrow(&self.source, self.current + 1)
+                    .ok_or_else(|| self.produce_error_with_location(
+                        ScannerErrorType::TrailingNumber, self.current + 1)
+                    )?;
+                
+                if char_after_that.chars().all(|c| c.is_ascii_digit()) {
+                    // Consume the "."
+                    self.advance();
+                    // Advance until there are no more digits
+                    self.advance_while_digit();
+                }
+                else {
+                    return Err(self.produce_error_with_location(
+                        ScannerErrorType::TrailingNumber, self.current + 1))
+                }
+            },
+            _ => { }
         }
         
         // Get the number itself
@@ -462,6 +468,7 @@ pub enum ScannerErrorType {
     UnterminatedString,
     // String is a "reason"
     IncorrectNumberToken(String),
+    TrailingNumber,
     NoMoreTokens,
     UnterminatedMultilineComment
 }
@@ -473,12 +480,13 @@ impl Display for ScannerError {
             format!("[line {}] Scanner Error", self.line);
 
         let output = match &self.error_type {
-            ScannerErrorType::UnknownToken(lexeme) => format!("Unknown token ('{}')", lexeme),
-            ScannerErrorType::UnterminatedString => "Unterminated string".parse().unwrap(),
+            ScannerErrorType::UnknownToken(lexeme) => &format!("Unknown token ('{}')", lexeme),
+            ScannerErrorType::UnterminatedString => "Unterminated string",
             ScannerErrorType::IncorrectNumberToken(reason) 
-                => format!("The number was written in an incorrect format: {}", reason),
-            ScannerErrorType::NoMoreTokens => "There were no more tokens to parse".parse().unwrap(),
-            ScannerErrorType::UnterminatedMultilineComment => "Multiline comment was not terminated".parse().unwrap()
+                => &format!("The number was written in an incorrect format: {}", reason),
+            ScannerErrorType::NoMoreTokens => "There were no more tokens to parse",
+            ScannerErrorType::UnterminatedMultilineComment => "Multiline comment was not terminated",
+            ScannerErrorType::TrailingNumber => "Trailing literals are not supported"
         };
 
         write!(f, "{error_header}: {}", output)?;

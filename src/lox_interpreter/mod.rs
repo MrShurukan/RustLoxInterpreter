@@ -67,9 +67,10 @@ impl LoxInterpreter {
         
         let tokens = scanner.scan_tokens();
         if let Err(errors) = tokens {
-            println!("Scanning failed.\n");
-            for err in errors {
-                println!("{err}\n");
+            let errors_error = if errors.len() == 1 { "error" } else { "errors" };
+            println!("Scanning failed. {} {errors_error} found\n", errors.len());
+            for (i, err) in errors.iter().enumerate() {
+                println!("Error #{}\n{err}\n", i + 1);
             }
             
             bail!("Couldn't advance to parsing");
