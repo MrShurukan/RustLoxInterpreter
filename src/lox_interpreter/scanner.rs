@@ -360,7 +360,7 @@ impl Scanner {
     /// ### Example
     /// This function is used to create a string that looks something like this:
     /// ```
-    /// 14. let test = (hello + 1
+    /// 14. var test = (hello + 1
     ///                ^
     /// ```
     /// Resulting string consists of two lines and has a marker denoted by
@@ -368,7 +368,7 @@ impl Scanner {
     /// the `self.source` string. See "Arguments" below.
     ///
     /// ### Arguments
-    /// * `marker_position` - Absolute index of a char into the `self.source` string.
+    /// * `marker_position` - Absolute index of a grapheme into the `self.source` string.
     /// It is computed by iterating over `self.source.graphemes(true)`
     fn get_line_with_marker(source: &str, marker_position: usize, line_number: &mut usize) -> anyhow::Result<String> {
         let mut current_position: usize = 0;

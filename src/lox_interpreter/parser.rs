@@ -40,12 +40,19 @@ impl Parser {
     }
 
     fn expression<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression<'a>, ParserError> {
-        self.equality(tokens)
+        self.comma(tokens)
+    }
+
+    // expr, expr
+    fn comma<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression<'a>, ParserError> {
+        let mut expr = self.equality(tokens)?;
+        parse_binary!(self, PT::Comma, expr, tokens);
+
+        Ok(expr)
     }
 
     // != ==
     fn equality<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression<'a>, ParserError> {
-
         let mut expr = self.comparison(tokens)?;
         parse_binary!(self, (PT::BangEqual | PT::EqualEqual), expr, tokens);
 
@@ -143,6 +150,16 @@ impl Parser {
         println!("{error}")
     }
 
+    /// Gets a helper string for error displaying with a marker on the second line.
+    /// ### Example
+    /// This function is used to create a string that looks something like this:
+    /// ```
+    /// 14. var stuff = (1 + class) * 3
+    ///                      ^^^^^
+    /// ```
+    /// Resulting string consists of two lines and has a marker denoted by a sequence of
+    /// `^` on the second line. The line is parsed from `token` by the `token.line_offset` and
+    /// the `token.lexeme_size` string. Line is fetched from `source` string.
     fn get_error_marked_line(error_type: ParserErrorType, token: Token, source: &str) -> ParserError {
         let line = source.split("\n").nth(token.line - 1);
         if line.is_none() {
