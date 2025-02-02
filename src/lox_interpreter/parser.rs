@@ -1,6 +1,6 @@
 ﻿use crate::lox_interpreter::expression::Expression;
 use crate::lox_interpreter::token::Token;
-use crate::lox_interpreter::token_type::{KeywordType as KT, LiteralType, PunctuationType as PT, PunctuationType, TokenType as TT, TokenType};
+use crate::lox_interpreter::token_type::{ConstantKeywordType, KeywordType as KT, LiteralType, PunctuationType as PT, PunctuationType, TokenType as TT, TokenType};
 use std::error::Error;
 use std::fmt::{format, Display, Formatter};
 use std::iter::Peekable;
@@ -26,6 +26,53 @@ macro_rules! parse_binary {
                 operator: op.to_owned(),
                 right: Box::new(right)
             }
+        }
+    };
+}
+
+/// This macro is used to create error producing.
+/// 
+/// It's used to capture erroneous tokens to alert user of a potential problem.
+/// For instance, catching something like `* 3 + 1` and warning that the user didn't
+/// provide a value on the left side of the star.
+///
+/// Otherwise, this error will go all the way to the bottom of precedence and just get
+/// reported as "Incorrect token in this place" 
+macro_rules! binary_error_produce {
+    ($self:ident, $error_enum_types:pat_param, $tokens:ident, $next_precedence:ident) => {
+        let current_token = &Self::peek($tokens)?;
+        if let TT::Punctuation($error_enum_types) = current_token.token_type {
+            $tokens.next();
+            // Discard the right part
+            _ = $self.$next_precedence($tokens)?;
+            
+            // Discard the expression entirely. Report an error
+            return Err(Parser::get_error_marked_line(ParserErrorType::BinaryOperatorNoLeftPart, 
+                (*current_token).to_owned(), &$self.source));
+        }
+    };
+}
+
+macro_rules! parse_binary_with_error_produce {
+    ($self:ident, $enum_types:pat_param, $tokens:ident, $next_precedence:ident) => {
+        {
+            binary_error_produce!($self, $enum_types, $tokens, $next_precedence);
+        
+            let mut expr = $self.$next_precedence($tokens)?;
+            parse_binary!($self, $enum_types, expr, $tokens, $next_precedence);
+            
+            expr
+        }
+    };
+    
+    ($self:ident, $enum_types:pat_param, $error_enum_types:pat_param, $tokens:ident, $next_precedence:ident) => {
+        {
+            binary_error_produce!($self, $error_enum_types, $tokens, $next_precedence);
+        
+            let mut expr = $self.$next_precedence($tokens)?;
+            parse_binary!($self, $enum_types, expr, $tokens, $next_precedence);
+            
+            expr
         }
     };
 }
@@ -63,17 +110,17 @@ impl Parser {
                 // Continue otherwise
                 _ => {}
             }
-            
+
             match token.token_type {
-                // Keyword is a nice way to know we are aligned
-                TokenType::Keyword(_) => { return; }
+                // Keyword (not a constant like true or false) is a nice way to know we are aligned
+                TokenType::Keyword(KT::Regular(_)) => { return; }
                 // Just keep on marching otherwise
                 _ => {}
             }
 
             old_token_type = token.token_type.to_owned();
         }
-        
+
         tokens.next();
     }
 
@@ -114,40 +161,38 @@ impl Parser {
 
     // expr, expr
     fn comma<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression<'a>, ParserError> {
-        let mut expr = self.equality(tokens)?;
-        parse_binary!(self, PT::Comma, expr, tokens, equality);
-
+        let expr = parse_binary_with_error_produce!(self, PT::Comma, tokens, equality);
+        
         Ok(expr)
     }
 
     // != ==
     fn equality<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression<'a>, ParserError> {
-        let mut expr = self.comparison(tokens)?;
-        parse_binary!(self, (PT::BangEqual | PT::EqualEqual), expr, tokens, comparison);
+        let expr = parse_binary_with_error_produce!(self, (PT::BangEqual | PT::EqualEqual), tokens, comparison);
 
         Ok(expr)
     }
 
     // > >= < <=
     fn comparison<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression<'a>, ParserError> {
-        let mut expr = self.term(tokens)?;
-        parse_binary!(self, (PT::Greater | PT::GreaterEqual | PT::Less | PT::LessEqual), expr, tokens, term);
+        let expr = parse_binary_with_error_produce!(self, 
+            (PT::Greater | PT::GreaterEqual | PT::Less | PT::LessEqual), tokens, term);
 
         Ok(expr)
     }
 
     // + -
     fn term<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression<'a>, ParserError> {
-        let mut expr = self.factor(tokens)?;
-        parse_binary!(self, (PT::Plus | PT::Minus), expr, tokens, factor);
+        // Only a plus should produce an error, because a minus could still be a unary operator
+        let expr = parse_binary_with_error_produce!(self, 
+            (PT::Plus | PT::Minus), (PT::Plus), tokens, factor);
 
         Ok(expr)
     }
 
     // * /
     fn factor<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression<'a>, ParserError> {
-        let mut expr = self.unary(tokens)?;
-        parse_binary!(self, (PunctuationType::Star | PunctuationType::Slash), expr, tokens, unary);
+        let expr = parse_binary_with_error_produce!(self, (PT::Star | PT::Slash), tokens, unary);
 
         Ok(expr)
     }
@@ -173,31 +218,37 @@ impl Parser {
 
         let result = match &token.token_type {
             TT::Literal(literal_type) => { Some(Expression::Literal { value: literal_type }) }
-            TT::Keyword(KT::True) => { Some(Expression::Literal { value: &LiteralType::Boolean(true) }) }
-            TT::Keyword(KT::False) => { Some(Expression::Literal { value: &LiteralType::Boolean(false) }) }
-            TT::Keyword(KT::Nil) => { Some(Expression::Literal { value: &LiteralType::Nil }) }
+            TT::Keyword(KT::Constant(constant)) => {
+                match constant {
+                    ConstantKeywordType::True => Some(Expression::Literal { value: &LiteralType::Boolean(true) }),
+                    ConstantKeywordType::False => Some(Expression::Literal { value: &LiteralType::Boolean(false) }),
+                    ConstantKeywordType::Nil => Some(Expression::Literal { value: &LiteralType::Nil })
+                }
+            }
             TT::Punctuation(PT::LeftParen) => {
                 tokens.next();
                 let expr = self.expression(tokens)?;
                 let next_token = tokens.peek();
                 if next_token.is_none() {
-                    Self::report_non_critical(
-                        ParserError::new(ParserErrorType::UnclosedParenthesis, (*token).clone())
-                    )
+                    return Err(Self::get_error_marked_line(
+                        ParserErrorType::UnclosedParenthesis, (*token).clone(), &self.source
+                    ));
                 }
                 else {
                     let next_token = next_token.unwrap();
                     match next_token.token_type {
                         TT::Punctuation(PT::RightParen) => {},
 
-                        _ => Self::report_non_critical(
-                            ParserError::new(ParserErrorType::UnclosedParenthesis, (*next_token).clone())
-                        )
+                        _ => {
+                            return Err(Self::get_error_marked_line(
+                                ParserErrorType::UnclosedParenthesis, (*next_token).clone(), &self.source
+                            ));
+                        }
                     }
                 }
 
                 Some(Expression::Grouping { expression: Box::new(expr) })
-            },
+            },            
             _ => { None }
         };
 
@@ -213,10 +264,6 @@ impl Parser {
         else {
             Ok(token.unwrap())
         }
-    }
-
-    fn report_non_critical(error: ParserError) {
-        println!("{error}")
     }
 
     /// Gets a helper string for error displaying with a marker on the second line.
@@ -261,7 +308,9 @@ pub enum ParserErrorType {
     IncorrectToken,
     /// Internal, not supposed to occur
     IncorrectLineNumberProvided(usize),
-    UnfinishedTernary
+    UnfinishedTernary,
+    BinaryOperatorNoLeftPart,
+    NoPlusUnaryOperator
 }
 
 impl ParserError {
@@ -290,7 +339,9 @@ impl Display for ParserError {
             ParserErrorType::IncorrectToken => "Incorrect token in this place",
             ParserErrorType::IncorrectLineNumberProvided(line) =>
                 &*format!("[Internal parser error] Couldn't get {} as a line number (token: {:?})", line, self.token),
-            ParserErrorType::UnfinishedTernary => "Incorrect ternary operator"
+            ParserErrorType::UnfinishedTernary => "Incorrect ternary operator",
+            ParserErrorType::BinaryOperatorNoLeftPart => "Binary operator without a left part",
+            ParserErrorType::NoPlusUnaryOperator => "Unary plus is not supported in Lox"
         };
 
         write!(f, "{error_header}: {}", output)?;

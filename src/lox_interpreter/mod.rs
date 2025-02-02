@@ -87,7 +87,7 @@ impl LoxInterpreter {
             bail!("Couldn't advance to interpreting");
         }
         
-        println!("{:?}", expression?);
+        println!("{}", expression?[0].lisp_like_print());
 
         Ok(())
     }

@@ -40,7 +40,7 @@ impl Expression<'_> {
                 )
             }
             Self::Ternary { first, second, third } => {
-                format!("{} ? {} : {}", 
+                format!("{} ? {} : {}",
                         first.lisp_like_print(),
                         second.lisp_like_print(),
                         third.lisp_like_print())
