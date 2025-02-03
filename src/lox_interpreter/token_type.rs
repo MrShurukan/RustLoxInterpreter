@@ -1,4 +1,5 @@
 ﻿use std::collections::HashMap;
+use std::fmt::{Display, Formatter};
 use lazy_static::lazy_static;
 
 #[derive(Debug, Clone)]
@@ -75,4 +76,35 @@ pub enum PunctuationType {
     Equal, EqualEqual,
     Greater, GreaterEqual,
     Less, LessEqual,
+}
+
+impl Display for PunctuationType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let str = match self {
+            PunctuationType::LeftParen => "(",
+            PunctuationType::RightParen => ")",
+            PunctuationType::LeftBrace => "{",
+            PunctuationType::RightBrace => "}",
+            PunctuationType::Comma => ",",
+            PunctuationType::Dot => ".",
+            PunctuationType::Minus => "-",
+            PunctuationType::Plus => "+",
+            PunctuationType::Semicolon => ";",
+            PunctuationType::Slash => "/",
+            PunctuationType::Star => "*",
+            PunctuationType::Question => "?",
+            PunctuationType::Colon => ":",
+            PunctuationType::Bang => "!",
+            PunctuationType::BangEqual => "!=",
+            PunctuationType::Equal => "=",
+            PunctuationType::EqualEqual => "==",
+            PunctuationType::Greater => ">",
+            PunctuationType::GreaterEqual => ">=",
+            PunctuationType::Less => "<",
+            PunctuationType::LessEqual => "<=",
+        };
+        
+        write!(f, "{}", str)?;
+        Ok(())
+    }
 }

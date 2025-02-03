@@ -3,12 +3,15 @@ mod token;
 mod scanner;
 mod parser;
 mod expression;
+mod value;
+mod evaluator;
 
 use crate::lox_interpreter::scanner::Scanner;
 use anyhow::{bail, Context};
 use std::io::Write;
 use std::process::exit;
 use std::{fs, io};
+use crate::lox_interpreter::evaluator::Evaluator;
 use crate::lox_interpreter::parser::Parser;
 use crate::lox_interpreter::token::Token;
 use crate::lox_interpreter::token_type::{PunctuationType, TokenType};
@@ -77,6 +80,7 @@ impl LoxInterpreter {
         }
 
         let tokens_vec = tokens.unwrap();
+        println!("{tokens_vec:?}");
         let parser = Parser::new(tokens_vec, source.to_owned());
         let expression = parser.parse();
 
@@ -87,7 +91,10 @@ impl LoxInterpreter {
             bail!("Couldn't advance to interpreting");
         }
         
-        println!("{}", expression?[0].lisp_like_print());
+        let evaluator = Evaluator { source: &parser.source };
+        let value = evaluator.evaluate(&expression?[0])?;
+        
+        println!("{value:?}");
 
         Ok(())
     }

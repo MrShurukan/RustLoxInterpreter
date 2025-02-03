@@ -59,7 +59,7 @@ impl Scanner {
 
         self.tokens.push(
             Token { token_type: TokenType::EOF, line: self.line, 
-                lexeme_size: 0, line_offset: 0 }
+                lexeme_size: 1, line_offset: self.current_from_line_start + 1 }
         );
         
         if errors.len() > 0 {

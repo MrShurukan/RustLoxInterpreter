@@ -11,21 +11,18 @@ use unicode_segmentation::UnicodeSegmentation;
 pub struct Parser {
     tokens: Vec<Token>,
     /// Reference to an original string to point out errors with a location
-    source: String
+    pub source: String
 }
 
 
 macro_rules! parse_binary {
     ($self:ident, $enum_types:pat_param, $expression:ident, $tokens:ident, $next_precedence:ident) => {
-        while let TT::Punctuation(op @ $enum_types) = &Self::peek($tokens)?.token_type {
+        let token = &Self::peek($tokens)?;
+        while let TT::Punctuation($enum_types) = token.token_type {
             $tokens.next();
             let right = $self.$next_precedence($tokens)?;
 
-            $expression = Expression::Binary {
-                left: Box::new($expression),
-                operator: op.to_owned(),
-                right: Box::new(right)
-            }
+            $expression = Expression::new_binary($expression, token, right);
         }
     };
 }
@@ -142,11 +139,7 @@ impl Parser {
                 tokens.next();
                 let third = self.comma(tokens)?;
 
-                expr = Expression::Ternary {
-                    first: Box::new(expr),
-                    second: Box::new(second),
-                    third: Box::new(third)
-                }
+                expr = Expression::new_ternary(expr, second, third);
             }
             else {
                 return Err(
@@ -199,14 +192,12 @@ impl Parser {
 
     // ! - (as unary operator)
     fn unary<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParserError> {
-        if let TT::Punctuation(op @ (PT::Bang | PT::Minus)) = &Self::peek(tokens)?.token_type {
+        let token = &Self::peek(tokens)?;
+        if let TT::Punctuation(PT::Bang | PT::Minus) = &token.token_type {
             tokens.next();
             let right = self.unary(tokens)?;
 
-            return Ok(Expression::Unary {
-                operator: op.to_owned(),
-                right: Box::new(right)
-            });
+            return Ok(Expression::new_unary(token, right));
         }
 
         self.primary(tokens)
@@ -217,12 +208,12 @@ impl Parser {
         let token = Self::peek(tokens)?;
 
         let result = match &token.token_type {
-            TT::Literal(literal_type) => { Some(Expression::Literal { value: (*literal_type).clone() }) }
+            TT::Literal(literal_type) => { Some(Expression::new_literal(token)) }
             TT::Keyword(KT::Constant(constant)) => {
                 match constant {
-                    ConstantKeywordType::True => Some(Expression::Literal { value: LiteralType::Boolean(true) }),
-                    ConstantKeywordType::False => Some(Expression::Literal { value: LiteralType::Boolean(false) }),
-                    ConstantKeywordType::Nil => Some(Expression::Literal { value: LiteralType::Nil })
+                    ConstantKeywordType::True => Some(Expression::new_literal_custom_type(token, LiteralType::Boolean(true))),
+                    ConstantKeywordType::False => Some(Expression::new_literal_custom_type(token, LiteralType::Boolean(false))),
+                    ConstantKeywordType::Nil => Some(Expression::new_literal_custom_type(token, LiteralType::Nil))
                 }
             }
             TT::Punctuation(PT::LeftParen) => {
@@ -247,7 +238,7 @@ impl Parser {
                     }
                 }
 
-                Some(Expression::Grouping { expression: Box::new(expr) })
+                Some(Expression::new_grouping(expr))
             },
             _ => { None }
         };
@@ -314,10 +305,6 @@ pub enum ParserErrorType {
 }
 
 impl ParserError {
-    pub fn new(error_type: ParserErrorType, token: Token) -> ParserError {
-        ParserError { error_type, token, location: None }
-    }
-
     pub fn new_without_token<'a>(error_type: ParserErrorType) -> ParserError {
         ParserError {
             error_type,
@@ -347,6 +334,10 @@ impl Display for ParserError {
         write!(f, "{error_header}: {}", output)?;
         if let Some(location) = &self.location {
             write!(f, "\n\nHappened here:\n{}", location)?;
+        }
+
+        if let Token { token_type: TokenType::EOF, .. } = self.token {
+            write!(f, " (pointing at EOF, something went wrong)")?;
         }
 
         Ok(())
