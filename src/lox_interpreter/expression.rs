@@ -339,22 +339,18 @@ pub enum EvaluationErrorType {
     IncorrectTypeForComparison(Value),
     IncorrectTypeForConcatenation(Value),
     IncorrectBinaryOperator(PunctuationType),
-    // /// Internal, not supposed to occur
-    // IncorrectLineNumberProvided(usize),
 }
 
 impl Error for EvaluationError {}
 impl Display for EvaluationError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let error_header =
-            if self.expression.line_start == self.expression.end_offset
+            if self.expression.line_start == self.expression.line_end
                 { format!("[line {}] Runtime Expression Error", self.expression.line_start) }
             else
                 { format!("[lines {}-{}] Runtime Expression Error", self.expression.line_start, self.expression.line_end) };
         
         let message = match &self.evaluation_error_type {
-            //EvaluationErrorType::IncorrectLineNumberProvided(line) =>
-            //    &format!("[Internal runtime error] Couldn't get {} as a line number (expression: {:?})", line, self.expression),
             EvaluationErrorType::IncorrectUnaryOperator(op) =>
                 &format!("Can't use {} as a unary operator", op),
             EvaluationErrorType::IncorrectBinaryOperator(op) =>

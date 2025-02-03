@@ -12,14 +12,14 @@ pub struct Evaluator<'a> {
 impl Evaluator<'_> {
     pub fn evaluate(&self, expression: &Expression) -> Result<Value, RuntimeError> {
         expression.evaluate()
-            .or_else(|err| { 
-                Err(RuntimeError { 
+            .or_else(|err| {
+                Err(RuntimeError {
                     location: Some(Self::get_error_marked_line(&err, self.source)),
                     runtime_error_type: RuntimeErrorType::Evaluation(err)
                 })
             })
     }
-    
+
     // TODO: Refactor that a bit
     /// Gets a helper string for error displaying with a marker on the second line.
     /// ### Example
@@ -47,14 +47,16 @@ impl Evaluator<'_> {
             // i.e. `14. var stuff = (1 + 3 +`
             let line = line.unwrap();
             let line_number_string = format!("{}. ", line_number);
+            result_string += "\n";
             result_string += &line_number_string;
-            
+            result_string += line;
+
             // On the first line we calculate the spaces as an offset to an expression.
             // Marker is calculated until the end of the line unless this line is also the end
             // of the expression
             if line_number == error.expression.line_start {
-                let spaces = " ".repeat(line_number_string.len() + error.expression.start_offset);
-                
+                let spaces = " ".repeat(line_number_string.len() + error.expression.start_offset - 1);
+
                 if line_number == error.expression.line_end {
                     let marker = "*".repeat(error.expression.end_offset - error.expression.start_offset);
                     result_string += &format!("\n{spaces}{marker}");
@@ -68,20 +70,20 @@ impl Evaluator<'_> {
             // and then start drawing the marker. If this is the last line
             // then we draw according to the offset. Otherwise we draw until the end of the line
             else {
-                let spaces = " ".repeat(line_number_string.len() + 
+                let spaces = " ".repeat(line_number_string.len() +
                     line.chars().take_while(|c| c.is_ascii_whitespace()).count());
-                
+
                 if line_number == error.expression.line_end {
-                    let marker = "*".repeat(error.expression.end_offset - spaces.len());
+                    let marker = "*".repeat(error.expression.end_offset - spaces.len() + 2);
                     result_string += &format!("\n{spaces}{marker}");
                     return result_string;
                 }
-                
+
                 let marker = "*".repeat(line.len() - spaces.len());
                 result_string += &format!("\n{spaces}{marker}");
             }
         }
-        
+
 
         result_string
     }
@@ -114,7 +116,7 @@ impl Display for RuntimeError {
         if let Some(location) = &self.location {
             write!(f, "\n\nHappened here:\n{}", location)?;
         }
-        
+
         Ok(())
     }
 }

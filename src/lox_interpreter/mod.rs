@@ -80,7 +80,6 @@ impl LoxInterpreter {
         }
 
         let tokens_vec = tokens.unwrap();
-        println!("{tokens_vec:?}");
         let parser = Parser::new(tokens_vec, source.to_owned());
         let expression = parser.parse();
 
@@ -92,9 +91,14 @@ impl LoxInterpreter {
         }
         
         let evaluator = Evaluator { source: &parser.source };
-        let value = evaluator.evaluate(&expression?[0])?;
+        let value = evaluator.evaluate(&expression?[0]);
+        if let Err(error) = value {
+            println!("{error}\n");
+
+            bail!("Couldn't evaluate");
+        }
         
-        println!("{value:?}");
+        println!("{:?}", value.expect(""));
 
         Ok(())
     }
