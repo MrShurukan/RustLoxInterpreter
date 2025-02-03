@@ -50,7 +50,7 @@ impl Expression {
             end_offset: token.line_offset + token.lexeme_size,
         }
     }
-    
+
     pub fn new_grouping(expression: Expression) -> Self {
         Self {
             line_start: expression.line_start,
@@ -60,7 +60,7 @@ impl Expression {
             expression_type: ExpressionType::Grouping { expression: Box::new(expression) },
         }
     }
-    
+
     pub fn new_unary(operator: &Token, expression: Expression) -> Self {
         if let Token { token_type: TokenType::Punctuation(op), .. } = operator {
             Self {
@@ -75,21 +75,21 @@ impl Expression {
             panic!("Non-punctuation token passed to new_unary expression function");
         }
     }
-    
+
     pub fn new_ternary(first: Expression, second: Expression, third: Expression) -> Self {
         Self {
             line_start: first.line_start,
             line_end: third.line_end,
             start_offset: first.start_offset,
             end_offset: third.end_offset,
-            expression_type: ExpressionType::Ternary { 
+            expression_type: ExpressionType::Ternary {
                 first: Box::new(first),
                 second: Box::new(second),
                 third: Box::new(third)
             },
         }
     }
-    
+
     pub fn new_binary(left: Expression, operator: &Token, right: Expression) -> Self {
         if let Token { token_type: TokenType::Punctuation(op), .. } = operator {
             Self {
@@ -108,7 +108,7 @@ impl Expression {
             panic!("Non-punctuation token passed to new_binary expression function");
         }
     }
-    
+
     pub fn evaluate(&self) -> Result<Value, EvaluationError> {
         match &self.expression_type {
             ExpressionType::Literal { value } => {
@@ -163,22 +163,33 @@ impl Expression {
                         if right == 0.0 {
                             return Err(self.error(EvaluationErrorType::DivisionByZero));
                         }
-                        
+
                         Ok(Value::Number(left / right))
                     },
                     PunctuationType::Plus => {
                         let left_num = self.ensure_number_for_arithmetic_copy(&left, "addition");
                         if left_num.is_err() {
-                            let left = self.ensure_string_for_concat(left)?;
-                            let right = self.ensure_string_for_concat(right)?;
-
-                            Ok(Value::String(format!("{left}{right}")))
+                            if let Value::String(_) = left {
+                                Ok(Value::String(self.concat_convert(left, right)?))
+                            }
+                            else {
+                                Err(left_num.err().unwrap())
+                            }
                         }
                         else {
-                            let left_num = left_num.expect("");
-                            let right_num = self.ensure_number_for_arithmetic(right, "addition")?;
-
-                            Ok(Value::Number(left_num + right_num))
+                            match &right {
+                                Value::String(_) => {
+                                    Ok(Value::String(self.concat_convert(left, right)?))
+                                },
+                                Value::Number(right_num) => {
+                                    Ok(Value::Number(left_num.ok().unwrap() + right_num))
+                                },
+                                _ => Err(self.error(
+                                    EvaluationErrorType::IncorrectTypeForArithmeticOperation {
+                                        value: right,
+                                        operation: "addition"
+                                    }))
+                            }
                         }
                     },
 
@@ -186,7 +197,7 @@ impl Expression {
                     PunctuationType::Greater => {
                         let left = self.ensure_number_for_comparison(left)?;
                         let right = self.ensure_number_for_comparison(right)?;
-                        
+
                         Ok(Value::Boolean(left > right))
                     },
                     PunctuationType::GreaterEqual => {
@@ -207,7 +218,7 @@ impl Expression {
 
                         Ok(Value::Boolean(left <= right))
                     },
-                    
+
                     // == !=
                     PunctuationType::EqualEqual => {
                         Ok(Value::Boolean(left == right))
@@ -219,7 +230,7 @@ impl Expression {
                     _ => Err(self.error(EvaluationErrorType::IncorrectBinaryOperator(operator.to_owned())))
                 }
             },
-            ExpressionType::Ternary { first, second, third } => { 
+            ExpressionType::Ternary { first, second, third } => {
                 let first = first.evaluate()?;
                 if first.is_truthy() {
                     Ok(second.evaluate()?)
@@ -255,22 +266,29 @@ impl Expression {
         }
         else {
             Err(self.error(
-                EvaluationErrorType::IncorrectTypeForArithmeticOperation { 
-                    value: value.to_owned(), operation 
+                EvaluationErrorType::IncorrectTypeForArithmeticOperation {
+                    value: value.to_owned(), operation
                 })
             )
         }
     }
-
-    fn ensure_string_for_concat(&self, value: Value) -> Result<String, EvaluationError>  {
-        if let Value::String(str) = value {
-            Ok(str)
-        }
-        else {
-            Err(self.error(EvaluationErrorType::IncorrectTypeForConcatenation(value)))
-        }
+    
+    fn concat_convert(&self, left: Value, right: Value) -> Result<String, EvaluationError> {
+        let left = self.convert_to_str(left)?;
+        let right = self.convert_to_str(right)?;
+        
+        Ok(left + &right)
     }
     
+    fn convert_to_str(&self, value: Value) -> Result<String, EvaluationError> {
+        match value {
+            Value::String(str) => { Ok(str) }
+            Value::Number(num) => { Ok(num.to_string()) }
+            Value::Boolean(bool) => { Ok(bool.to_string()) }
+            Value::Nil => { Ok(String::from("nil")) }
+        }
+    }
+
     fn error(&self, evaluation_error_type: EvaluationErrorType) -> EvaluationError {
         EvaluationError { expression: self.to_owned(), evaluation_error_type }
     }
@@ -354,7 +372,7 @@ impl Display for EvaluationError {
                 { format!("[line {}] Runtime Expression Error", self.expression.line_start) }
             else
                 { format!("[lines {}-{}] Runtime Expression Error", self.expression.line_start, self.expression.line_end) };
-        
+
         let message = match &self.evaluation_error_type {
             EvaluationErrorType::IncorrectUnaryOperator(op) =>
                 &format!("Can't use {} as a unary operator", op),
