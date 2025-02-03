@@ -160,6 +160,10 @@ impl Expression {
                         let left = self.ensure_number_for_arithmetic(left, "division")?;
                         let right = self.ensure_number_for_arithmetic(right, "division")?;
 
+                        if right == 0.0 {
+                            return Err(self.error(EvaluationErrorType::DivisionByZero));
+                        }
+                        
                         Ok(Value::Number(left / right))
                     },
                     PunctuationType::Plus => {
@@ -339,6 +343,7 @@ pub enum EvaluationErrorType {
     IncorrectTypeForComparison(Value),
     IncorrectTypeForConcatenation(Value),
     IncorrectBinaryOperator(PunctuationType),
+    DivisionByZero
 }
 
 impl Error for EvaluationError {}
@@ -361,6 +366,8 @@ impl Display for EvaluationError {
                 &format!("Expected a number for comparison, found {}", value.get_type_name()),
             EvaluationErrorType::IncorrectTypeForConcatenation(value) =>
                 &format!("Expected a string for concatenation, found {}", value.get_type_name()),
+            EvaluationErrorType::DivisionByZero =>
+                "Division by zero",
         };
 
         write!(f, "{error_header}\n{message}")?;
