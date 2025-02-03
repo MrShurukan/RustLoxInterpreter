@@ -1,23 +1,26 @@
-﻿use std::error::Error;
+﻿use crate::lox_interpreter::expression::EvaluationError;
+use crate::lox_interpreter::statement::Statement;
+use std::error::Error;
 use std::fmt::{Display, Formatter};
-use crate::lox_interpreter::expression::{EvaluationError, Expression};
-use crate::lox_interpreter::parser::{ParserError, ParserErrorType};
-use crate::lox_interpreter::value::Value;
 
-pub struct Evaluator<'a> {
+pub struct Interpreter<'a> {
     /// Source file, used to print errors
     pub source: &'a str
 }
 
-impl Evaluator<'_> {
-    pub fn evaluate(&self, expression: &Expression) -> Result<Value, RuntimeError> {
-        expression.evaluate()
-            .or_else(|err| {
-                Err(RuntimeError {
-                    location: Some(Self::get_error_marked_line(&err, self.source)),
-                    runtime_error_type: RuntimeErrorType::Evaluation(err)
-                })
-            })
+impl Interpreter<'_> {
+    pub fn interpret(&self, statements: &[Statement]) -> Result<(), RuntimeError> {
+        for statement in statements {
+            statement.evaluate()
+                .or_else(|err| {
+                    Err(RuntimeError {
+                        location: Some(Self::get_error_marked_line(&err, self.source)),
+                        runtime_error_type: RuntimeErrorType::Evaluation(err)
+                    })
+                })?;
+        }
+        
+        Ok(())
     }
 
     // TODO: Refactor that a bit

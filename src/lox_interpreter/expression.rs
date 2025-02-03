@@ -1,9 +1,8 @@
-﻿use std::error::Error;
-use std::fmt::{Display, Formatter};
-use crate::lox_interpreter::parser::{ParserError, ParserErrorType};
-use crate::lox_interpreter::token::Token;
+﻿use crate::lox_interpreter::token::Token;
 use crate::lox_interpreter::token_type::{LiteralType, PunctuationType, TokenType};
 use crate::lox_interpreter::value::Value;
+use std::error::Error;
+use std::fmt::{Display, Formatter};
 
 #[derive(Debug, Clone)]
 pub struct Expression {
@@ -292,60 +291,6 @@ impl Expression {
     fn error(&self, evaluation_error_type: EvaluationErrorType) -> EvaluationError {
         EvaluationError { expression: self.to_owned(), evaluation_error_type }
     }
-
-    pub fn lisp_like_print(&self) -> String {
-        match &self.expression_type {
-            ExpressionType::Binary { left, operator, right } => {
-                Self::parenthesize(
-                    format!("{}", operator).as_str(),
-                    vec![left, right]
-                )
-            }
-            ExpressionType::Grouping { expression } => {
-                Self::parenthesize(
-                    "group",
-                    vec![expression]
-                )
-            }
-            ExpressionType::Literal { value } => {
-                match value {
-                    LiteralType::Identifier(identifier) => { identifier.to_owned() }
-                    LiteralType::String(string) => { string.to_owned() }
-                    LiteralType::Number(number) => { number.to_string() }
-                    LiteralType::Nil => { "nil".parse().unwrap() },
-                    LiteralType::Boolean(bool) => { bool.to_string() }
-                }
-            }
-            ExpressionType::Unary { operator, right } => {
-                Self::parenthesize(
-                    format!("{}", operator).as_str(),
-                    vec![right]
-                )
-            }
-            ExpressionType::Ternary { first, second, third } => {
-                format!("{} ? {} : {}",
-                        first.lisp_like_print(),
-                        second.lisp_like_print(),
-                        third.lisp_like_print())
-            }
-        }
-    }
-
-    fn parenthesize(name: &str, expressions: Vec<&Expression>) -> String {
-        let mut output = String::new();
-
-        output.push('(');
-        output.push_str(name);
-
-        for expression in expressions {
-            output.push(' ');
-            output.push_str(expression.lisp_like_print().as_str())
-        }
-
-        output.push(')');
-
-        output
-    }
 }
 
 #[derive(Debug)]
@@ -359,7 +304,6 @@ pub enum EvaluationErrorType {
     IncorrectUnaryOperator(PunctuationType),
     IncorrectTypeForArithmeticOperation { operation: &'static str, value: Value },
     IncorrectTypeForComparison(Value),
-    IncorrectTypeForConcatenation(Value),
     IncorrectBinaryOperator(PunctuationType),
     DivisionByZero
 }
@@ -382,8 +326,6 @@ impl Display for EvaluationError {
                 &format!("Expected a number for {operation}, found {}", value.get_type_name()),
             EvaluationErrorType::IncorrectTypeForComparison(value) =>
                 &format!("Expected a number for comparison, found {}", value.get_type_name()),
-            EvaluationErrorType::IncorrectTypeForConcatenation(value) =>
-                &format!("Expected a string for concatenation, found {}", value.get_type_name()),
             EvaluationErrorType::DivisionByZero =>
                 "Division by zero",
         };

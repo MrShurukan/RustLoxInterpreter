@@ -1,4 +1,6 @@
-﻿#[derive(Debug, Clone, PartialEq)]
+﻿use std::fmt::{Display, Formatter};
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     String(String),
     Number(f64),
@@ -22,5 +24,18 @@ impl Value {
             Value::Nil => false,
             _ => true,
         }
+    }
+}
+
+impl Display for Value {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Value::String(str) => { write!(f, "{str}")? }
+            Value::Number(num) => { write!(f, "{num}")? }
+            Value::Boolean(bool) => { write!(f, "{bool}")? }
+            Value::Nil => { write!(f, "nil")? }
+        };
+        
+        Ok(())
     }
 }

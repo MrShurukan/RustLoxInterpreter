@@ -1,24 +1,25 @@
 ﻿use crate::lox_interpreter::expression::Expression;
+use crate::lox_interpreter::statement::Statement;
 use crate::lox_interpreter::token::Token;
-use crate::lox_interpreter::token_type::{ConstantKeywordType, KeywordType as KT, LiteralType, PunctuationType as PT, PunctuationType, TokenType as TT, TokenType};
+use crate::lox_interpreter::token_type::{ConstantKeywordType, KeywordType as KT, LiteralType, PunctuationType as PT, RegularKeywordType as RKT, TokenType as TT, TokenType};
 use std::error::Error;
-use std::fmt::{format, Display, Formatter};
+use std::fmt::{Display, Formatter};
 use std::iter::Peekable;
+use std::rc::Rc;
 use std::slice::Iter;
-use anyhow::bail;
-use unicode_segmentation::UnicodeSegmentation;
 
-pub struct Parser {
-    tokens: Vec<Token>,
+pub struct Parser<'a> {
+    tokens: Rc<[Token]>,
+    index: usize,
     /// Reference to an original string to point out errors with a location
-    pub source: String
+    pub source: &'a str
 }
 
 
 macro_rules! parse_binary {
     ($self:ident, $enum_types:pat_param, $expression:ident, $tokens:ident, $next_precedence:ident) => {
         while let token @ Token { token_type: TT::Punctuation($enum_types), .. } = &Self::peek($tokens)? {
-            $tokens.next();
+            advance!($self, $tokens);
             let right = $self.$next_precedence($tokens)?;
 
             $expression = Expression::new_binary($expression, token, right);
@@ -38,7 +39,7 @@ macro_rules! binary_error_produce {
     ($self:ident, $error_enum_types:pat_param, $tokens:ident, $next_precedence:ident) => {
         let current_token = &Self::peek($tokens)?;
         if let TT::Punctuation($error_enum_types) = current_token.token_type {
-            $tokens.next();
+            advance!($self, $tokens);
             // Discard the right part
             _ = $self.$next_precedence($tokens)?;
 
@@ -73,13 +74,71 @@ macro_rules! parse_binary_with_error_produce {
     };
 }
 
-impl Parser {
-    pub fn new(tokens: Vec<Token>, source: String) -> Self {
-        Self { tokens, source }
+macro_rules! check_and_consume {
+    ($self:ident, $tokens:ident, $enum_types:pat_param, $error_message:literal) => {
+        let current_token = &Self::peek($tokens)?;
+        if let $enum_types = current_token.token_type {
+            advance!($self, $tokens);
+        }
+        else {
+            let previous_token = $self.tokens.iter().nth($self.index - 1).expect("No previous token available while parsing");
+            return Err(Self::get_error_marked_line(
+                ParserErrorType::MissingToken(String::from($error_message)), (*previous_token).clone(), &$self.source
+            ));
+        }
+    };
+}
+
+macro_rules! advance {
+    ($self:ident, $tokens:ident) => {
+        {
+            let token = $tokens.next();
+            if token.is_some() {
+                $self.index += 1
+            }
+
+            token
+        }
+    };
+}
+
+impl Parser<'_> {
+    pub fn new(tokens: Rc<[Token]>, source: &str) -> Parser {
+        Parser { tokens, source, index: 0 }
     }
 
-    pub fn parse(&self) -> Result<Vec<Expression>, ParserError> {
-        Ok(vec![self.expression(&mut self.tokens.iter().peekable())?])
+    pub fn parse(&mut self) -> Result<Vec<Statement>, Vec<ParserError>> {
+        let mut statements: Vec<Statement> = Vec::new();
+        let mut errors: Vec<ParserError> = Vec::new();
+
+        // Tokens must be copied for this iterator thing to work
+        // Rust has no guarantees I'm not going to change this vec later (complains about borrowing self)
+        // I guess it's not a big deal since this happens once per file or once per line in REPL
+        // and I'm using Rc to make this copy painless
+        let tokens_copy = self.tokens.to_owned();
+        let mut peekable = tokens_copy.iter().peekable();
+
+        while let Some(Token { token_type, ..}) = &peekable.peek() {
+            match token_type {
+                TokenType::EOF => { break; },
+                _ => {}
+            };
+
+            let result = self.statement(&mut peekable);
+            if let Ok(statement) = result {
+                statements.push(statement);
+            }
+            else {
+                errors.push(result.err().unwrap())
+            }
+        }
+
+        if errors.len() > 0 {
+            Err(errors)
+        }
+        else {
+            Ok(statements)
+        }
     }
 
     /// The goal of this method is to align parser with a next statement
@@ -91,7 +150,7 @@ impl Parser {
     ///
     /// This method attempts to minimize those by aligning with the next statement.
     /// It's not 100% correct, but it's good enough
-    fn synchronize(tokens: &mut Peekable<Iter<Token>>) {
+    fn synchronize(&mut self, tokens: &mut Peekable<Iter<Token>>) {
         let current_token = tokens.peek();
         // If we ran out of tokens - we're done already
         if current_token.is_none() {
@@ -99,7 +158,7 @@ impl Parser {
         }
 
         let mut old_token_type = current_token.unwrap().token_type.to_owned();
-        while let Some(token) = tokens.next() {
+        while let Some(token) = advance!(self, tokens) {
             match old_token_type {
                 // A semicolon is a very clear statement boundary
                 TokenType::Punctuation(PT::Semicolon) => { return; },
@@ -117,25 +176,45 @@ impl Parser {
             old_token_type = token.token_type.to_owned();
         }
 
-        tokens.next();
+        advance!(self, tokens);
     }
 
-    fn expression<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParserError> {
+    fn statement(&mut self, tokens: &mut Peekable<Iter<Token>>) -> Result<Statement, ParserError> {
+        let token = &Self::peek(tokens)?;
+        match token.token_type {
+            TT::Keyword(KT::Regular(RKT::Print)) => { advance!(self, tokens); self.print_statement(tokens) },
+            _ => self.expression_statement(tokens)
+        }
+    }
+
+    fn print_statement<'a>(&mut self, tokens: &mut Peekable<Iter<Token>>) -> Result<Statement, ParserError> {
+        let value = self.expression(tokens)?;
+        check_and_consume!(self, tokens, TT::Punctuation(PT::Semicolon), "Expected ';' after value.");
+        Ok(Statement::Print(value))
+    }
+
+    fn expression_statement<'a>(&mut self, tokens: &mut Peekable<Iter<Token>>) -> Result<Statement, ParserError> {
+        let value = self.expression(tokens)?;
+        check_and_consume!(self, tokens, TT::Punctuation(PT::Semicolon), "Expected ';' after expression.");
+        Ok(Statement::Expression(value))
+    }
+
+    fn expression<'a>(&mut self, tokens: &mut Peekable<Iter<Token>>) -> Result<Expression, ParserError> {
         self.ternary(tokens)
     }
 
     // expr ? expr : expr
-    fn ternary<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParserError> {
+    fn ternary<'a>(&mut self, tokens: &mut Peekable<Iter<Token>>) -> Result<Expression, ParserError> {
         let mut expr = self.comma(tokens)?;
 
         let question_token = &Self::peek(tokens)?;
         if let TT::Punctuation(PT::Question) = question_token.token_type {
-            tokens.next();
+            advance!(self, tokens);
             let second = self.comma(tokens)?;
 
             let third_token = &Self::peek(tokens)?;
             if let TT::Punctuation(PT::Colon) = third_token.token_type {
-                tokens.next();
+                advance!(self, tokens);
                 let third = self.comma(tokens)?;
 
                 expr = Expression::new_ternary(expr, second, third);
@@ -152,21 +231,21 @@ impl Parser {
     }
 
     // expr, expr
-    fn comma<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParserError> {
+    fn comma<'a>(&mut self, tokens: &mut Peekable<Iter<Token>>) -> Result<Expression, ParserError> {
         let expr = parse_binary_with_error_produce!(self, PT::Comma, tokens, equality);
 
         Ok(expr)
     }
 
     // != ==
-    fn equality<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParserError> {
+    fn equality<'a>(&mut self, tokens: &mut Peekable<Iter<Token>>) -> Result<Expression, ParserError> {
         let expr = parse_binary_with_error_produce!(self, (PT::BangEqual | PT::EqualEqual), tokens, comparison);
 
         Ok(expr)
     }
 
     // > >= < <=
-    fn comparison<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParserError> {
+    fn comparison<'a>(&mut self, tokens: &mut Peekable<Iter<Token>>) -> Result<Expression, ParserError> {
         let expr = parse_binary_with_error_produce!(self,
             (PT::Greater | PT::GreaterEqual | PT::Less | PT::LessEqual), tokens, term);
 
@@ -174,7 +253,7 @@ impl Parser {
     }
 
     // + -
-    fn term<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParserError> {
+    fn term<'a>(&mut self, tokens: &mut Peekable<Iter<Token>>) -> Result<Expression, ParserError> {
         // Only a plus should produce an error, because a minus could still be a unary operator
         let expr = parse_binary_with_error_produce!(self,
             (PT::Plus | PT::Minus), (PT::Plus), tokens, factor);
@@ -183,17 +262,17 @@ impl Parser {
     }
 
     // * /
-    fn factor<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParserError> {
+    fn factor<'a>(&mut self, tokens: &mut Peekable<Iter<Token>>) -> Result<Expression, ParserError> {
         let expr = parse_binary_with_error_produce!(self, (PT::Star | PT::Slash), tokens, unary);
 
         Ok(expr)
     }
 
     // ! - (as unary operator)
-    fn unary<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParserError> {
+    fn unary<'a>(&mut self, tokens: &mut Peekable<Iter<Token>>) -> Result<Expression, ParserError> {
         let token = &Self::peek(tokens)?;
         if let TT::Punctuation(PT::Bang | PT::Minus) = &token.token_type {
-            tokens.next();
+            advance!(self, tokens);
             let right = self.unary(tokens)?;
 
             return Ok(Expression::new_unary(token, right));
@@ -203,11 +282,11 @@ impl Parser {
     }
 
     // Literals, groupings
-    fn primary<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParserError> {
+    fn primary<'a>(&mut self, tokens: &mut Peekable<Iter<Token>>) -> Result<Expression, ParserError> {
         let token = Self::peek(tokens)?;
 
         let result = match &token.token_type {
-            TT::Literal(literal_type) => { Some(Expression::new_literal(token)) }
+            TT::Literal(_) => { Some(Expression::new_literal(token)) }
             TT::Keyword(KT::Constant(constant)) => {
                 match constant {
                     ConstantKeywordType::True => Some(Expression::new_literal_custom_type(token, LiteralType::Boolean(true))),
@@ -216,7 +295,7 @@ impl Parser {
                 }
             }
             TT::Punctuation(PT::LeftParen) => {
-                tokens.next();
+                advance!(self, tokens);
                 let expr = self.expression(tokens)?;
                 let next_token = tokens.peek();
                 if next_token.is_none() {
@@ -242,7 +321,7 @@ impl Parser {
             _ => { None }
         };
 
-        if result.is_some() { tokens.next(); }
+        if result.is_some() { advance!(self, tokens); }
         result.ok_or_else(|| Self::get_error_marked_line(ParserErrorType::IncorrectToken, (*token).clone(), &self.source))
     }
 
@@ -300,7 +379,7 @@ pub enum ParserErrorType {
     IncorrectLineNumberProvided(usize),
     UnfinishedTernary,
     BinaryOperatorNoLeftPart,
-    NoPlusUnaryOperator
+    MissingToken(String)
 }
 
 impl ParserError {
@@ -324,10 +403,11 @@ impl Display for ParserError {
             ParserErrorType::RanOutOfTokens => "No more tokens to parse",
             ParserErrorType::IncorrectToken => "Incorrect token in this place",
             ParserErrorType::IncorrectLineNumberProvided(line) =>
-                &*format!("[Internal parser error] Couldn't get {} as a line number (token: {:?})", line, self.token),
+                &format!("[Internal parser error] Couldn't get {} as a line number (token: {:?})", line, self.token),
             ParserErrorType::UnfinishedTernary => "Incorrect ternary operator",
             ParserErrorType::BinaryOperatorNoLeftPart => "Binary operator without a left part",
-            ParserErrorType::NoPlusUnaryOperator => "Unary plus is not supported in Lox"
+            ParserErrorType::MissingToken(message) =>
+                &format!("Missing token. {}", message),
         };
 
         write!(f, "{error_header}: {}", output)?;

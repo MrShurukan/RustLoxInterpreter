@@ -4,17 +4,17 @@ mod scanner;
 mod parser;
 mod expression;
 mod value;
-mod evaluator;
+mod interpreter;
+mod statement;
 
+use crate::lox_interpreter::interpreter::Interpreter;
+use crate::lox_interpreter::parser::Parser;
 use crate::lox_interpreter::scanner::Scanner;
 use anyhow::{bail, Context};
 use std::io::Write;
 use std::process::exit;
 use std::{fs, io};
-use crate::lox_interpreter::evaluator::Evaluator;
-use crate::lox_interpreter::parser::Parser;
-use crate::lox_interpreter::token::Token;
-use crate::lox_interpreter::token_type::{PunctuationType, TokenType};
+use std::rc::Rc;
 
 pub struct LoxInterpreter {
 }
@@ -80,25 +80,26 @@ impl LoxInterpreter {
         }
 
         let tokens_vec = tokens.unwrap();
-        let parser = Parser::new(tokens_vec, source.to_owned());
-        let expression = parser.parse();
+        let mut parser = Parser::new(tokens_vec.into(), source);
+        let statements = parser.parse();
 
-        if let Err(err) = expression {
-            println!("Parsing failed.\n");
-            println!("{err}\n");
-        
+        if let Err(errors) = statements {
+            let errors_error = if errors.len() == 1 { "error" } else { "errors" };
+            println!("Parsing failed. {} {errors_error} found\n", errors.len());
+            for (i, err) in errors.iter().enumerate() {
+                println!("Error #{}\n{err}\n", i + 1);
+            }
+
             bail!("Couldn't advance to interpreting");
         }
         
-        let evaluator = Evaluator { source: &parser.source };
-        let value = evaluator.evaluate(&expression?[0]);
+        let interpreter = Interpreter { source };
+        let value = interpreter.interpret(&statements.ok().unwrap());
         if let Err(error) = value {
             println!("{error}\n");
 
             bail!("Couldn't evaluate");
         }
-        
-        println!("{:?}", value.expect(""));
 
         Ok(())
     }
