@@ -17,8 +17,7 @@ pub struct Parser {
 
 macro_rules! parse_binary {
     ($self:ident, $enum_types:pat_param, $expression:ident, $tokens:ident, $next_precedence:ident) => {
-        let token = &Self::peek($tokens)?;
-        while let TT::Punctuation($enum_types) = token.token_type {
+        while let token @ Token { token_type: TT::Punctuation($enum_types), .. } = &Self::peek($tokens)? {
             $tokens.next();
             let right = $self.$next_precedence($tokens)?;
 
