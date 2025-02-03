@@ -31,13 +31,13 @@ macro_rules! parse_binary {
 }
 
 /// This macro is used to create error producing.
-/// 
+///
 /// It's used to capture erroneous tokens to alert user of a potential problem.
 /// For instance, catching something like `* 3 + 1` and warning that the user didn't
 /// provide a value on the left side of the star.
 ///
 /// Otherwise, this error will go all the way to the bottom of precedence and just get
-/// reported as "Incorrect token in this place" 
+/// reported as "Incorrect token in this place"
 macro_rules! binary_error_produce {
     ($self:ident, $error_enum_types:pat_param, $tokens:ident, $next_precedence:ident) => {
         let current_token = &Self::peek($tokens)?;
@@ -45,9 +45,9 @@ macro_rules! binary_error_produce {
             $tokens.next();
             // Discard the right part
             _ = $self.$next_precedence($tokens)?;
-            
+
             // Discard the expression entirely. Report an error
-            return Err(Parser::get_error_marked_line(ParserErrorType::BinaryOperatorNoLeftPart, 
+            return Err(Parser::get_error_marked_line(ParserErrorType::BinaryOperatorNoLeftPart,
                 (*current_token).to_owned(), &$self.source));
         }
     };
@@ -57,21 +57,21 @@ macro_rules! parse_binary_with_error_produce {
     ($self:ident, $enum_types:pat_param, $tokens:ident, $next_precedence:ident) => {
         {
             binary_error_produce!($self, $enum_types, $tokens, $next_precedence);
-        
+
             let mut expr = $self.$next_precedence($tokens)?;
             parse_binary!($self, $enum_types, expr, $tokens, $next_precedence);
-            
+
             expr
         }
     };
-    
+
     ($self:ident, $enum_types:pat_param, $error_enum_types:pat_param, $tokens:ident, $next_precedence:ident) => {
         {
             binary_error_produce!($self, $error_enum_types, $tokens, $next_precedence);
-        
+
             let mut expr = $self.$next_precedence($tokens)?;
             parse_binary!($self, $enum_types, expr, $tokens, $next_precedence);
-            
+
             expr
         }
     };
@@ -124,12 +124,12 @@ impl Parser {
         tokens.next();
     }
 
-    fn expression<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression<'a>, ParserError> {
+    fn expression<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParserError> {
         self.ternary(tokens)
     }
 
     // expr ? expr : expr
-    fn ternary<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression<'a>, ParserError> {
+    fn ternary<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParserError> {
         let mut expr = self.comma(tokens)?;
 
         let question_token = &Self::peek(tokens)?;
@@ -160,45 +160,45 @@ impl Parser {
     }
 
     // expr, expr
-    fn comma<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression<'a>, ParserError> {
+    fn comma<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParserError> {
         let expr = parse_binary_with_error_produce!(self, PT::Comma, tokens, equality);
-        
+
         Ok(expr)
     }
 
     // != ==
-    fn equality<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression<'a>, ParserError> {
+    fn equality<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParserError> {
         let expr = parse_binary_with_error_produce!(self, (PT::BangEqual | PT::EqualEqual), tokens, comparison);
 
         Ok(expr)
     }
 
     // > >= < <=
-    fn comparison<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression<'a>, ParserError> {
-        let expr = parse_binary_with_error_produce!(self, 
+    fn comparison<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParserError> {
+        let expr = parse_binary_with_error_produce!(self,
             (PT::Greater | PT::GreaterEqual | PT::Less | PT::LessEqual), tokens, term);
 
         Ok(expr)
     }
 
     // + -
-    fn term<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression<'a>, ParserError> {
+    fn term<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParserError> {
         // Only a plus should produce an error, because a minus could still be a unary operator
-        let expr = parse_binary_with_error_produce!(self, 
+        let expr = parse_binary_with_error_produce!(self,
             (PT::Plus | PT::Minus), (PT::Plus), tokens, factor);
 
         Ok(expr)
     }
 
     // * /
-    fn factor<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression<'a>, ParserError> {
+    fn factor<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParserError> {
         let expr = parse_binary_with_error_produce!(self, (PT::Star | PT::Slash), tokens, unary);
 
         Ok(expr)
     }
 
     // ! - (as unary operator)
-    fn unary<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression<'a>, ParserError> {
+    fn unary<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParserError> {
         if let TT::Punctuation(op @ (PT::Bang | PT::Minus)) = &Self::peek(tokens)?.token_type {
             tokens.next();
             let right = self.unary(tokens)?;
@@ -213,16 +213,16 @@ impl Parser {
     }
 
     // Literals, groupings
-    fn primary<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression<'a>, ParserError> {
+    fn primary<'a>(&self, tokens: &mut Peekable<Iter<'a, Token>>) -> Result<Expression, ParserError> {
         let token = Self::peek(tokens)?;
 
         let result = match &token.token_type {
-            TT::Literal(literal_type) => { Some(Expression::Literal { value: literal_type }) }
+            TT::Literal(literal_type) => { Some(Expression::Literal { value: (*literal_type).clone() }) }
             TT::Keyword(KT::Constant(constant)) => {
                 match constant {
-                    ConstantKeywordType::True => Some(Expression::Literal { value: &LiteralType::Boolean(true) }),
-                    ConstantKeywordType::False => Some(Expression::Literal { value: &LiteralType::Boolean(false) }),
-                    ConstantKeywordType::Nil => Some(Expression::Literal { value: &LiteralType::Nil })
+                    ConstantKeywordType::True => Some(Expression::Literal { value: LiteralType::Boolean(true) }),
+                    ConstantKeywordType::False => Some(Expression::Literal { value: LiteralType::Boolean(false) }),
+                    ConstantKeywordType::Nil => Some(Expression::Literal { value: LiteralType::Nil })
                 }
             }
             TT::Punctuation(PT::LeftParen) => {
@@ -248,7 +248,7 @@ impl Parser {
                 }
 
                 Some(Expression::Grouping { expression: Box::new(expr) })
-            },            
+            },
             _ => { None }
         };
 

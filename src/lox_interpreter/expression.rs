@@ -1,15 +1,17 @@
 ﻿use crate::lox_interpreter::token_type::{LiteralType, PunctuationType};
 
 #[derive(Debug)]
-pub enum Expression<'a> {
-    Binary { left: Box<Expression<'a>>, operator: PunctuationType, right: Box<Expression<'a>> },
-    Ternary { first: Box<Expression<'a>>, second: Box<Expression<'a>>, third: Box<Expression<'a>> },
-    Grouping { expression: Box<Expression<'a>> },
-    Literal { value: &'a LiteralType },
-    Unary { operator: PunctuationType, right: Box<Expression<'a>> }
+pub enum Expression {
+    Binary { left: Box<Expression>, operator: PunctuationType, right: Box<Expression> },
+    Ternary { first: Box<Expression>, second: Box<Expression>, third: Box<Expression> },
+    Grouping { expression: Box<Expression> },
+    Literal { value: LiteralType },
+    Unary { operator: PunctuationType, right: Box<Expression> }
 }
 
-impl Expression<'_> {
+impl Expression {
+    
+    
     pub fn lisp_like_print(&self) -> String {
         match self {
             Self::Binary { left, operator, right } => {
@@ -75,11 +77,11 @@ mod tests {
         let expression = Expression::Binary {
             left: Box::new(Expression::Unary {
                 operator: PunctuationType::Minus,
-                right: Box::new(Expression::Literal { value: &LiteralType::Number(123.0) })
+                right: Box::new(Expression::Literal { value: LiteralType::Number(123.0) })
             }),
             operator: PunctuationType::Star,
             right: Box::new(Expression::Grouping {
-                expression: Box::new(Expression::Literal { value: &LiteralType::Number(45.67) })
+                expression: Box::new(Expression::Literal { value: LiteralType::Number(45.67) })
             }),
         };
 
