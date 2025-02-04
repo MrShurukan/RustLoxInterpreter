@@ -1,11 +1,9 @@
-﻿use std::cell::RefCell;
+﻿use crate::lox_interpreter::environment::{Environment, EnvironmentError, EnvironmentErrorType};
 use crate::lox_interpreter::token::Token;
 use crate::lox_interpreter::token_type::{LiteralType, PunctuationType, TokenType};
 use crate::lox_interpreter::value::Value;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
-use std::rc::Rc;
-use crate::lox_interpreter::environment::{Environment, EnvironmentError, EnvironmentErrorType};
 
 #[derive(Debug, Clone)]
 pub struct Expression {
@@ -130,7 +128,7 @@ impl Expression {
         }
     }
 
-    pub fn evaluate(&self, environment: Rc<RefCell<Environment>>) -> Result<Value, EvaluationError> {
+    pub fn evaluate(&self, environments: &mut Vec<Environment>) -> Result<Value, EvaluationError> {
         match &self.expression_type {
             ExpressionType::Literal { value } => {
                 match value {
@@ -140,17 +138,17 @@ impl Expression {
                     LiteralType::Nil => Ok(Value::Nil),
 
                     LiteralType::Identifier(name) => { 
-                        Environment::get(environment, name).ok_or_else(|| {
+                        Environment::get(environments, name).ok_or_else(|| {
                             self.error(EvaluationErrorType::UndefinedVariable(name.to_owned()))
                         })
                     }
                 }
             },
             ExpressionType::Grouping { expression } => {
-                expression.evaluate(environment)
+                expression.evaluate(environments)
             },
             ExpressionType::Unary { operator, right } => {
-                let right = right.evaluate(environment)?;
+                let right = right.evaluate(environments)?;
 
                 match operator {
                     PunctuationType::Minus => {
@@ -165,8 +163,8 @@ impl Expression {
                 }
             },
             ExpressionType::Binary { left, operator, right } => {
-                let left = left.evaluate(Rc::clone(&environment))?;
-                let right = right.evaluate(Rc::clone(&environment))?;
+                let left = left.evaluate(environments)?;
+                let right = right.evaluate(environments)?;
 
                 match operator {
                     // - * / +
@@ -257,17 +255,17 @@ impl Expression {
                 }
             },
             ExpressionType::Ternary { first, second, third } => {
-                let first = first.evaluate(Rc::clone(&environment))?;
+                let first = first.evaluate(environments)?;
                 if first.is_truthy() {
-                    Ok(second.evaluate(Rc::clone(&environment))?)
+                    Ok(second.evaluate(environments)?)
                 }
                 else {
-                    Ok(third.evaluate(Rc::clone(&environment))?)
+                    Ok(third.evaluate(environments)?)
                 }
             },
             ExpressionType::Assignment { identifier, expression } => {
-                let value = expression.evaluate(Rc::clone(&environment))?;
-                let assign_result = Environment::assign(environment, identifier, &value);
+                let value = expression.evaluate(environments)?;
+                let assign_result = Environment::assign(environments, identifier, &value);
 
                 if let Err(EnvironmentError { environment_error_type }) = assign_result {
                     match environment_error_type {
