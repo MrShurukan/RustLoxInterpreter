@@ -1,7 +1,8 @@
 ﻿use crate::lox_interpreter::expression::Expression;
 use crate::lox_interpreter::statement::Statement;
 use crate::lox_interpreter::token::Token;
-use crate::lox_interpreter::token_type::{ConstantKeywordType, KeywordType as KT, LiteralType, PunctuationType as PT, RegularKeywordType as RKT, TokenType as TT, TokenType};
+use crate::lox_interpreter::token_type::{ConstantKeywordType, KeywordType as KT, LiteralType, PunctuationType as PT,
+                                         RegularKeywordType as RKT, TokenType as TT, TokenType, LiteralType as LT};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::iter::Peekable;
@@ -89,6 +90,27 @@ macro_rules! check_and_consume {
     };
 }
 
+/// A version of the `check_and_consume` but this one actually clones and returns the parsed
+/// token. Unless you need the token use the `check_and_consume` instead
+macro_rules! check_and_consume_return {
+    ($self:ident, $tokens:ident, $enum_types:pat_param, $error_message:literal) => {
+        {
+            let current_token = Self::peek($tokens)?.to_owned();
+            if let $enum_types = current_token.token_type {
+                advance!($self, $tokens);
+            }
+            else {
+                let previous_token = $self.tokens.iter().nth($self.index - 1).expect("No previous token available while parsing");
+                return Err(Self::get_error_marked_line(
+                    ParserErrorType::MissingToken(String::from($error_message)), (*previous_token).clone(), &$self.source
+                ));
+            }
+
+            current_token
+        }
+    };
+}
+
 macro_rules! advance {
     ($self:ident, $tokens:ident) => {
         {
@@ -124,7 +146,7 @@ impl Parser<'_> {
                 _ => {}
             };
 
-            let result = self.statement(&mut peekable);
+            let result = self.declaration(&mut peekable);
             if let Ok(statement) = result {
                 statements.push(statement);
             }
@@ -177,6 +199,36 @@ impl Parser<'_> {
         }
 
         advance!(self, tokens);
+    }
+
+    fn declaration(&mut self, tokens: &mut Peekable<Iter<Token>>) -> Result<Statement, ParserError> {
+        let token = &Self::peek(tokens)?;
+        let result = match token.token_type {
+            TT::Keyword(KT::Regular(RKT::Var)) => { advance!(self, tokens); self.var_declaration(tokens) },
+            _ => self.statement(tokens)
+        };
+
+        // If we got an error, we align our tokens with the next valid entry point.
+        // See synchronize comments for more info
+        if result.is_err() {
+            self.synchronize(tokens);
+        }
+
+        result
+    }
+
+    fn var_declaration(&mut self, tokens: &mut Peekable<Iter<Token>>) -> Result<Statement, ParserError> {
+        let name = check_and_consume_return!(self, tokens,
+            TT::Literal(LT::Identifier(_)), "Expected a variable name");
+
+        let mut initializer: Option<Expression> = None;
+        if let TT::Punctuation(PT::Equal) = &Self::peek(tokens)?.token_type {
+            advance!(self, tokens);
+            initializer = Some(self.expression(tokens)?);
+        }
+
+        check_and_consume!(self, tokens, TT::Punctuation(PT::Semicolon), "Expected a ';' after variable declaration");
+        Ok(Statement::VariableDeclaration { identifier: name, initializer })
     }
 
     fn statement(&mut self, tokens: &mut Peekable<Iter<Token>>) -> Result<Statement, ParserError> {
@@ -286,14 +338,14 @@ impl Parser<'_> {
         let token = Self::peek(tokens)?;
 
         let result = match &token.token_type {
-            TT::Literal(_) => { Some(Expression::new_literal(token)) }
+            TT::Literal(_) => { Some(Expression::new_literal(token)) },
             TT::Keyword(KT::Constant(constant)) => {
                 match constant {
                     ConstantKeywordType::True => Some(Expression::new_literal_custom_type(token, LiteralType::Boolean(true))),
                     ConstantKeywordType::False => Some(Expression::new_literal_custom_type(token, LiteralType::Boolean(false))),
                     ConstantKeywordType::Nil => Some(Expression::new_literal_custom_type(token, LiteralType::Nil))
                 }
-            }
+            },
             TT::Punctuation(PT::LeftParen) => {
                 advance!(self, tokens);
                 let expr = self.expression(tokens)?;

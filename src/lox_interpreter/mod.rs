@@ -6,6 +6,7 @@ mod expression;
 mod value;
 mod interpreter;
 mod statement;
+mod environment;
 
 use crate::lox_interpreter::interpreter::Interpreter;
 use crate::lox_interpreter::parser::Parser;
@@ -14,7 +15,6 @@ use anyhow::{bail, Context};
 use std::io::Write;
 use std::process::exit;
 use std::{fs, io};
-use std::rc::Rc;
 
 pub struct LoxInterpreter {
 }
@@ -38,7 +38,7 @@ impl LoxInterpreter {
             },
             _ => {}
         }
-        
+
         Ok(())
     }
     pub fn run_prompt(&mut self) -> anyhow::Result<()> {
@@ -67,7 +67,7 @@ impl LoxInterpreter {
 
     fn run(source: &str) -> anyhow::Result<()> {
         let scanner = Scanner::new(source.to_owned());
-        
+
         let tokens = scanner.scan_tokens();
         if let Err(errors) = tokens {
             let errors_error = if errors.len() == 1 { "error" } else { "errors" };
@@ -75,7 +75,7 @@ impl LoxInterpreter {
             for (i, err) in errors.iter().enumerate() {
                 println!("Error #{}\n{err}\n", i + 1);
             }
-            
+
             bail!("Couldn't advance to parsing");
         }
 
@@ -92,8 +92,8 @@ impl LoxInterpreter {
 
             bail!("Couldn't advance to interpreting");
         }
-        
-        let interpreter = Interpreter { source };
+
+        let mut interpreter = Interpreter::new(source);
         let value = interpreter.interpret(&statements.ok().unwrap());
         if let Err(error) = value {
             println!("{error}\n");

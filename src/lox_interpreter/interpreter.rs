@@ -2,16 +2,22 @@
 use crate::lox_interpreter::statement::Statement;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
+use crate::lox_interpreter::environment::Environment;
 
 pub struct Interpreter<'a> {
     /// Source file, used to print errors
-    pub source: &'a str
+    pub source: &'a str,
+    environment: Environment
 }
 
 impl Interpreter<'_> {
-    pub fn interpret(&self, statements: &[Statement]) -> Result<(), RuntimeError> {
+    pub fn new(source: &str) -> Interpreter {
+        Interpreter { source, environment: Environment::new() }
+    } 
+    
+    pub fn interpret(&mut self, statements: &[Statement]) -> Result<(), RuntimeError> {
         for statement in statements {
-            statement.evaluate()
+            statement.evaluate(&mut self.environment)
                 .or_else(|err| {
                     Err(RuntimeError {
                         location: Some(Self::get_error_marked_line(&err, self.source)),

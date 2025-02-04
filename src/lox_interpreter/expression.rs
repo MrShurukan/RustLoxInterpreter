@@ -3,6 +3,7 @@ use crate::lox_interpreter::token_type::{LiteralType, PunctuationType, TokenType
 use crate::lox_interpreter::value::Value;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
+use crate::lox_interpreter::environment::Environment;
 
 #[derive(Debug, Clone)]
 pub struct Expression {
@@ -36,7 +37,7 @@ impl Expression {
             }
         }
         else {
-            panic!("Non-literal token passed to new_literal expression function");
+            unreachable!("Non-literal token passed to new_literal expression function");
         }
     }
 
@@ -71,7 +72,7 @@ impl Expression {
             }
         }
         else {
-            panic!("Non-punctuation token passed to new_unary expression function");
+            unreachable!("Non-punctuation token passed to new_unary expression function");
         }
     }
 
@@ -104,26 +105,31 @@ impl Expression {
             }
         }
         else {
-            panic!("Non-punctuation token passed to new_binary expression function");
+            unreachable!("Non-punctuation token passed to new_binary expression function");
         }
     }
 
-    pub fn evaluate(&self) -> Result<Value, EvaluationError> {
+    pub fn evaluate(&self, environment: &Environment) -> Result<Value, EvaluationError> {
         match &self.expression_type {
             ExpressionType::Literal { value } => {
                 match value {
-                    LiteralType::Identifier(_) => { todo!("Can't evaluate identifiers yet") },
                     LiteralType::String(str) => Ok(Value::String(str.to_owned())),
                     LiteralType::Number(num) => Ok(Value::Number(*num)),
                     LiteralType::Boolean(bool) => Ok(Value::Boolean(*bool)),
-                    LiteralType::Nil => Ok(Value::Nil)
+                    LiteralType::Nil => Ok(Value::Nil),
+
+                    LiteralType::Identifier(name) => { 
+                        environment.get(name).ok_or_else(|| {
+                            self.error(EvaluationErrorType::UndefinedVariable(name.to_owned()))
+                        })
+                    }
                 }
             },
             ExpressionType::Grouping { expression } => {
-                expression.evaluate()
+                expression.evaluate(environment)
             },
             ExpressionType::Unary { operator, right } => {
-                let right = right.evaluate()?;
+                let right = right.evaluate(environment)?;
 
                 match operator {
                     PunctuationType::Minus => {
@@ -138,8 +144,8 @@ impl Expression {
                 }
             },
             ExpressionType::Binary { left, operator, right } => {
-                let left = left.evaluate()?;
-                let right = right.evaluate()?;
+                let left = left.evaluate(environment)?;
+                let right = right.evaluate(environment)?;
 
                 match operator {
                     // - * / +
@@ -230,12 +236,12 @@ impl Expression {
                 }
             },
             ExpressionType::Ternary { first, second, third } => {
-                let first = first.evaluate()?;
+                let first = first.evaluate(environment)?;
                 if first.is_truthy() {
-                    Ok(second.evaluate()?)
+                    Ok(second.evaluate(environment)?)
                 }
                 else {
-                    Ok(third.evaluate()?)
+                    Ok(third.evaluate(environment)?)
                 }
             },
         }
@@ -305,7 +311,8 @@ pub enum EvaluationErrorType {
     IncorrectTypeForArithmeticOperation { operation: &'static str, value: Value },
     IncorrectTypeForComparison(Value),
     IncorrectBinaryOperator(PunctuationType),
-    DivisionByZero
+    DivisionByZero,
+    UndefinedVariable(String)
 }
 
 impl Error for EvaluationError {}
@@ -328,6 +335,8 @@ impl Display for EvaluationError {
                 &format!("Expected a number for comparison, found {}", value.get_type_name()),
             EvaluationErrorType::DivisionByZero =>
                 "Division by zero",
+            EvaluationErrorType::UndefinedVariable(name) =>
+                &format!("Undefined variable '{}'", name)
         };
 
         write!(f, "{error_header}\n{message}")?;
