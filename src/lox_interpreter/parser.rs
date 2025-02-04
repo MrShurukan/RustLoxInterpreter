@@ -1,8 +1,8 @@
-﻿use crate::lox_interpreter::expression::Expression;
+﻿use crate::lox_interpreter::expression::{Expression, ExpressionType};
 use crate::lox_interpreter::statement::Statement;
 use crate::lox_interpreter::token::Token;
-use crate::lox_interpreter::token_type::{ConstantKeywordType, KeywordType as KT, LiteralType, PunctuationType as PT,
-                                         RegularKeywordType as RKT, TokenType as TT, TokenType, LiteralType as LT};
+use crate::lox_interpreter::token_type::{ConstantKeywordType, KeywordType as KT, LiteralType, LiteralType as LT,
+                                         PunctuationType as PT, RegularKeywordType as RKT, TokenType as TT, TokenType};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::iter::Peekable;
@@ -134,7 +134,7 @@ impl Parser<'_> {
         let mut errors: Vec<ParserError> = Vec::new();
 
         // Tokens must be copied for this iterator thing to work
-        // Rust has no guarantees I'm not going to change this vec later (complains about borrowing self)
+        // Rust has no guarantees I'm not going to change this Rc later (complains about borrowing self)
         // I guess it's not a big deal since this happens once per file or once per line in REPL
         // and I'm using Rc to make this copy painless
         let tokens_copy = self.tokens.to_owned();
@@ -252,7 +252,25 @@ impl Parser<'_> {
     }
 
     fn expression<'a>(&mut self, tokens: &mut Peekable<Iter<Token>>) -> Result<Expression, ParserError> {
-        self.ternary(tokens)
+        self.assignment(tokens)
+    }
+
+    fn assignment<'a>(&mut self, tokens: &mut Peekable<Iter<Token>>) -> Result<Expression, ParserError> {
+        let l_value = self.ternary(tokens)?;
+
+        let equals = &Self::peek(tokens)?;
+        if let TT::Punctuation(PT::Equal) = equals.token_type {
+            advance!(self, tokens);
+            let r_value = self.assignment(tokens)?;
+            
+            if let ExpressionType::Literal { value: LT::Identifier(_) } = &l_value.expression_type {
+                return Ok(Expression::new_assignment(l_value, r_value));
+            }
+            
+            return Err(Self::get_error_marked_line(ParserErrorType::UnfinishedTernary, (*equals).to_owned(), &self.source))
+        }
+
+        Ok(l_value)
     }
 
     // expr ? expr : expr
@@ -431,7 +449,8 @@ pub enum ParserErrorType {
     IncorrectLineNumberProvided(usize),
     UnfinishedTernary,
     BinaryOperatorNoLeftPart,
-    MissingToken(String)
+    MissingToken(String),
+    InvalidAssignmentTarget
 }
 
 impl ParserError {
@@ -460,6 +479,7 @@ impl Display for ParserError {
             ParserErrorType::BinaryOperatorNoLeftPart => "Binary operator without a left part",
             ParserErrorType::MissingToken(message) =>
                 &format!("Missing token. {}", message),
+            ParserErrorType::InvalidAssignmentTarget => "Invalid assignment target",
         };
 
         write!(f, "{error_header}: {}", output)?;

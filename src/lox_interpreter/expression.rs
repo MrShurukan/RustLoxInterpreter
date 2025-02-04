@@ -3,11 +3,11 @@ use crate::lox_interpreter::token_type::{LiteralType, PunctuationType, TokenType
 use crate::lox_interpreter::value::Value;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
-use crate::lox_interpreter::environment::Environment;
+use crate::lox_interpreter::environment::{Environment, EnvironmentError, EnvironmentErrorType};
 
 #[derive(Debug, Clone)]
 pub struct Expression {
-    expression_type: ExpressionType,
+    pub expression_type: ExpressionType,
     pub line_start: usize,
     pub line_end: usize,
     /// Offset in grapheme count from the start of the first line
@@ -22,7 +22,8 @@ pub enum ExpressionType {
     Ternary { first: Box<Expression>, second: Box<Expression>, third: Box<Expression> },
     Grouping { expression: Box<Expression> },
     Literal { value: LiteralType },
-    Unary { operator: PunctuationType, right: Box<Expression> }
+    Unary { operator: PunctuationType, right: Box<Expression> },
+    Assignment { identifier: String, expression: Box<Expression> }
 }
 
 impl Expression {
@@ -91,7 +92,7 @@ impl Expression {
     }
 
     pub fn new_binary(left: Expression, operator: &Token, right: Expression) -> Self {
-        if let Token { token_type: TokenType::Punctuation(op), .. } = operator {
+        if let TokenType::Punctuation(op) = &operator.token_type {
             Self {
                 line_start: left.line_start,
                 line_end: right.line_end,
@@ -108,8 +109,26 @@ impl Expression {
             unreachable!("Non-punctuation token passed to new_binary expression function");
         }
     }
+    
+    pub fn new_assignment(identifier: Expression, expression: Expression) -> Self {
+        if let ExpressionType::Literal { value: LiteralType::Identifier(name) } = &identifier.expression_type {
+            Self {
+                line_start: identifier.line_start,
+                line_end: expression.line_end,
+                start_offset: identifier.start_offset,
+                end_offset: expression.end_offset,
+                expression_type: ExpressionType::Assignment {
+                    identifier: name.to_owned(),
+                    expression: Box::new(expression),
+                },
+            }
+        }
+        else {
+            unreachable!("Non-identifier token passed to new_assignment expression function");
+        }
+    }
 
-    pub fn evaluate(&self, environment: &Environment) -> Result<Value, EvaluationError> {
+    pub fn evaluate(&self, environment: &mut Environment) -> Result<Value, EvaluationError> {
         match &self.expression_type {
             ExpressionType::Literal { value } => {
                 match value {
@@ -244,6 +263,21 @@ impl Expression {
                     Ok(third.evaluate(environment)?)
                 }
             },
+            ExpressionType::Assignment { identifier, expression } => {
+                let value = expression.evaluate(environment)?;
+                let assign_result = environment.assign(identifier, &value);
+                
+                if let Err(EnvironmentError { environment_error_type }) = assign_result {
+                    match environment_error_type {
+                        EnvironmentErrorType::UndefinedVariable(name) => {
+                            Err(self.error(EvaluationErrorType::UndefinedVariable(name)))
+                        }
+                    }
+                }
+                else {
+                    Ok(value)
+                }
+            }
         }
     }
 
