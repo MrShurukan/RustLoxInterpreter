@@ -124,6 +124,7 @@ macro_rules! advance {
     };
 }
 
+#[allow(unused_parens)]
 impl Parser<'_> {
     pub fn new(tokens: Rc<[Token]>, source: &str) -> Parser {
         Parser { tokens, source, index: 0 }
@@ -137,7 +138,7 @@ impl Parser<'_> {
         // Rust has no guarantees I'm not going to change this Rc later (complains about borrowing self)
         // I guess it's not a big deal since this happens once per file or once per line in REPL
         // and I'm using Rc to make this copy painless
-        let tokens_copy = self.tokens.to_owned();
+        let tokens_copy = Rc::clone(&self.tokens);
         let mut peekable = tokens_copy.iter().peekable();
 
         while let Some(Token { token_type, ..}) = &peekable.peek() {
@@ -201,6 +202,20 @@ impl Parser<'_> {
         advance!(self, tokens);
     }
 
+    fn block_statement<'a>(&mut self, tokens: &mut Peekable<Iter<Token>>) -> Result<Statement, ParserError> {
+        let mut statements: Vec<Statement> = Vec::new();
+
+        loop {
+            let token = &Self::peek(tokens)?;
+            if let TT::Punctuation(PT::RightBrace) = token.token_type { break; }
+
+            statements.push(self.declaration(tokens)?);
+        }
+
+        check_and_consume!(self, tokens, TT::Punctuation(PT::RightBrace), "Expected '}' after a block");
+        Ok(Statement::Block(statements.into()))
+    }
+
     fn declaration(&mut self, tokens: &mut Peekable<Iter<Token>>) -> Result<Statement, ParserError> {
         let token = &Self::peek(tokens)?;
         let result = match token.token_type {
@@ -235,6 +250,7 @@ impl Parser<'_> {
         let token = &Self::peek(tokens)?;
         match token.token_type {
             TT::Keyword(KT::Regular(RKT::Print)) => { advance!(self, tokens); self.print_statement(tokens) },
+            TT::Punctuation(PT::LeftBrace) => { advance!(self, tokens); self.block_statement(tokens) }
             _ => self.expression_statement(tokens)
         }
     }
@@ -262,12 +278,12 @@ impl Parser<'_> {
         if let TT::Punctuation(PT::Equal) = equals.token_type {
             advance!(self, tokens);
             let r_value = self.assignment(tokens)?;
-            
+
             if let ExpressionType::Literal { value: LT::Identifier(_) } = &l_value.expression_type {
                 return Ok(Expression::new_assignment(l_value, r_value));
             }
-            
-            return Err(Self::get_error_marked_line(ParserErrorType::UnfinishedTernary, (*equals).to_owned(), &self.source))
+
+            return Err(Self::get_error_marked_line(ParserErrorType::InvalidAssignmentTarget, (*equals).to_owned(), &self.source))
         }
 
         Ok(l_value)

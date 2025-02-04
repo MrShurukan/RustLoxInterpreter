@@ -1,8 +1,10 @@
-﻿use crate::lox_interpreter::token::Token;
+﻿use std::cell::RefCell;
+use crate::lox_interpreter::token::Token;
 use crate::lox_interpreter::token_type::{LiteralType, PunctuationType, TokenType};
 use crate::lox_interpreter::value::Value;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
+use std::rc::Rc;
 use crate::lox_interpreter::environment::{Environment, EnvironmentError, EnvironmentErrorType};
 
 #[derive(Debug, Clone)]
@@ -128,7 +130,7 @@ impl Expression {
         }
     }
 
-    pub fn evaluate(&self, environment: &mut Environment) -> Result<Value, EvaluationError> {
+    pub fn evaluate(&self, environment: Rc<RefCell<Environment>>) -> Result<Value, EvaluationError> {
         match &self.expression_type {
             ExpressionType::Literal { value } => {
                 match value {
@@ -138,7 +140,7 @@ impl Expression {
                     LiteralType::Nil => Ok(Value::Nil),
 
                     LiteralType::Identifier(name) => { 
-                        environment.get(name).ok_or_else(|| {
+                        Environment::get(environment, name).ok_or_else(|| {
                             self.error(EvaluationErrorType::UndefinedVariable(name.to_owned()))
                         })
                     }
@@ -163,8 +165,8 @@ impl Expression {
                 }
             },
             ExpressionType::Binary { left, operator, right } => {
-                let left = left.evaluate(environment)?;
-                let right = right.evaluate(environment)?;
+                let left = left.evaluate(Rc::clone(&environment))?;
+                let right = right.evaluate(Rc::clone(&environment))?;
 
                 match operator {
                     // - * / +
@@ -255,18 +257,18 @@ impl Expression {
                 }
             },
             ExpressionType::Ternary { first, second, third } => {
-                let first = first.evaluate(environment)?;
+                let first = first.evaluate(Rc::clone(&environment))?;
                 if first.is_truthy() {
-                    Ok(second.evaluate(environment)?)
+                    Ok(second.evaluate(Rc::clone(&environment))?)
                 }
                 else {
-                    Ok(third.evaluate(environment)?)
+                    Ok(third.evaluate(Rc::clone(&environment))?)
                 }
             },
             ExpressionType::Assignment { identifier, expression } => {
-                let value = expression.evaluate(environment)?;
-                let assign_result = environment.assign(identifier, &value);
-                
+                let value = expression.evaluate(Rc::clone(&environment))?;
+                let assign_result = Environment::assign(environment, identifier, &value);
+
                 if let Err(EnvironmentError { environment_error_type }) = assign_result {
                     match environment_error_type {
                         EnvironmentErrorType::UndefinedVariable(name) => {

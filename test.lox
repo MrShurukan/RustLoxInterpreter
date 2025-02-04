@@ -1,4 +1,18 @@
 var a = 1;
 var b = 2;
-b = 5;
+var c;
+{
+    // new!
+    var a = 2;
+    {
+        // even newer!!
+        var a = 3;
+        print a + b;
+
+        // testing outer
+        c = 1;
+    }
+    print a + b;
+}
 print a + b;
+print "Now printing C: " + c;

@@ -1,23 +1,25 @@
-﻿use crate::lox_interpreter::expression::EvaluationError;
+﻿use std::cell::RefCell;
+use crate::lox_interpreter::expression::EvaluationError;
 use crate::lox_interpreter::statement::Statement;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
+use std::rc::Rc;
 use crate::lox_interpreter::environment::Environment;
 
 pub struct Interpreter<'a> {
     /// Source file, used to print errors
     pub source: &'a str,
-    environment: Environment
+    environment: Rc<RefCell<Environment>>
 }
 
 impl Interpreter<'_> {
     pub fn new(source: &str) -> Interpreter {
-        Interpreter { source, environment: Environment::new() }
+        Interpreter { source, environment: Rc::new(RefCell::new(Environment::new())) }
     } 
     
     pub fn interpret(&mut self, statements: &[Statement]) -> Result<(), RuntimeError> {
         for statement in statements {
-            statement.evaluate(&mut self.environment)
+            statement.execute(Rc::clone(&self.environment))
                 .or_else(|err| {
                     Err(RuntimeError {
                         location: Some(Self::get_error_marked_line(&err, self.source)),
