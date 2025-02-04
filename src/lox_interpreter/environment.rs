@@ -1,14 +1,8 @@
-﻿use std::cell::RefCell;
-use crate::lox_interpreter::value::Value;
+﻿use crate::lox_interpreter::value::Value;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
-use std::rc::Rc;
 
-// TODO: Potentially think of environments as a list instead of a reference?
-// This seems like it could be rewritten as a plain list as there is only a single path
-// of enclosings at a time. Once you exit a block you pop and once you enter a block you push
-// Def something to think about.
 #[derive(Clone)]
 pub struct Environment {
     values: HashMap<String, Value>
@@ -23,7 +17,7 @@ impl Environment {
         self.values.insert(name, value);
     }
 
-    pub fn get(environments: Rc<Vec<Environment>>, name: &String) -> Option<Value> {
+    pub fn get(environments: &Vec<Environment>, name: &String) -> Option<Value> {
         for environment in environments.iter().rev() {
             match environment.values.get(name) {
                 // Try to get the value from the current environment
@@ -36,10 +30,7 @@ impl Environment {
         None
     }
 
-    pub fn assign(mut environments: Rc<Vec<Environment>>, name: &String, value: &Value) -> Result<(), EnvironmentError> {
-        let environments = Rc::get_mut(&mut environments)
-            .expect("Can't get a mutable reference to a vec");
-        
+    pub fn assign(environments: &mut Vec<Environment>, name: &String, value: &Value) -> Result<(), EnvironmentError> {        
         for environment in environments.iter_mut().rev() {
             // Try to set the value in the current environment
             if environment.values.contains_key(name) {

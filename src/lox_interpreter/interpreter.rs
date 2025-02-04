@@ -1,10 +1,8 @@
-﻿use std::cell::RefCell;
+﻿use crate::lox_interpreter::environment::Environment;
 use crate::lox_interpreter::expression::EvaluationError;
 use crate::lox_interpreter::statement::Statement;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
-use std::rc::Rc;
-use crate::lox_interpreter::environment::Environment;
 
 pub struct Interpreter<'a> {
     /// Source file, used to print errors
@@ -12,17 +10,17 @@ pub struct Interpreter<'a> {
     /// Environment stack. The latest environment on the stack represents the
     /// latest code block. You can access outer environments by moving back from 
     /// the end
-    environment: Rc<Vec<Environment>>
+    environment: Vec<Environment>
 }
 
 impl Interpreter<'_> {
     pub fn new(source: &str) -> Interpreter {
-        Interpreter { source, environment: Rc::new(vec![Environment::new()]) }
+        Interpreter { source, environment: vec![Environment::new()] }
     } 
     
     pub fn interpret(&mut self, statements: &[Statement]) -> Result<(), RuntimeError> {
         for statement in statements {
-            statement.execute(Rc::clone(&self.environment))
+            statement.execute(&mut self.environment)
                 .or_else(|err| {
                     Err(RuntimeError {
                         location: Some(Self::get_error_marked_line(&err, self.source)),
