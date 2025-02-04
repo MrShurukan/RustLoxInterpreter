@@ -9,12 +9,15 @@ use crate::lox_interpreter::environment::Environment;
 pub struct Interpreter<'a> {
     /// Source file, used to print errors
     pub source: &'a str,
-    environment: Rc<RefCell<Environment>>
+    /// Environment stack. The latest environment on the stack represents the
+    /// latest code block. You can access outer environments by moving back from 
+    /// the end
+    environment: Rc<Vec<Environment>>
 }
 
 impl Interpreter<'_> {
     pub fn new(source: &str) -> Interpreter {
-        Interpreter { source, environment: Rc::new(RefCell::new(Environment::new())) }
+        Interpreter { source, environment: Rc::new(vec![Environment::new()]) }
     } 
     
     pub fn interpret(&mut self, statements: &[Statement]) -> Result<(), RuntimeError> {

@@ -11,73 +11,48 @@ use std::rc::Rc;
 // Def something to think about.
 #[derive(Clone)]
 pub struct Environment {
-    enclosing: Option<Rc<RefCell<Environment>>>,
     values: HashMap<String, Value>
 }
 
 impl Environment {
     pub fn new() -> Self {
-        Self { values: HashMap::new(), enclosing: None }
-    }
-
-    pub fn new_with_enclosing(environment: Rc<RefCell<Environment>>) -> Self {
-        Self { values: HashMap::new(), enclosing: Some(environment) }
+        Self { values: HashMap::new() }
     }
     
     pub fn define(&mut self, name: String, value: Value) {
         self.values.insert(name, value);
     }
 
-    pub fn get(mut environment: Rc<RefCell<Environment>>, name: &String) -> Option<Value> {
-        let mut new_enclosing: Rc<RefCell<Environment>>;
-        loop {
-            match environment.borrow().values.get(name) {
+    pub fn get(environments: Rc<Vec<Environment>>, name: &String) -> Option<Value> {
+        for environment in environments.iter().rev() {
+            match environment.values.get(name) {
                 // Try to get the value from the current environment
-                Some(value) => {
-                    return Some(value.to_owned())
-                }
-                None => {
-                    match &environment.borrow().enclosing {
-                        // If not found, try moving up by one environment
-                        Some(enclosing) => {
-                            // See below match statement
-                            new_enclosing = Rc::clone(enclosing);
-                        },
-                        // If there is no enclosing environment, we didn't find the variable
-                        _ => {
-                            return None;
-                        }
-                    }
-                }
+                Some(value) => return Some(value.to_owned()),
+                // Otherwise continue and try our luck in the next environment in the stack
+                None => continue
             }
-
-            environment = new_enclosing;
         }
+        
+        None
     }
 
-    pub fn assign(mut environment: Rc<RefCell<Environment>>, name: &String, value: &Value) -> Result<(), EnvironmentError> {
-        let mut new_enclosing: Rc<RefCell<Environment>>;
-        loop {
+    pub fn assign(mut environments: Rc<Vec<Environment>>, name: &String, value: &Value) -> Result<(), EnvironmentError> {
+        let environments = Rc::get_mut(&mut environments)
+            .expect("Can't get a mutable reference to a vec");
+        
+        for environment in environments.iter_mut().rev() {
             // Try to set the value in the current environment
-            if environment.borrow().values.contains_key(name) {
-                environment.borrow_mut().values.insert(name.to_owned(), value.to_owned());
-                return Ok(())
-            } else {
-                match &environment.borrow().enclosing {
-                    // If not found, try moving up by one environment
-                    Some(enclosing) => {
-                        // See below if statement
-                        new_enclosing = Rc::clone(&enclosing);
-                    },
-                    // If there is no enclosing environment, we didn't find the variable
-                    _ => {
-                        return Err(EnvironmentError::new(EnvironmentErrorType::UndefinedVariable(name.to_owned())));
-                    }
-                }
+            if environment.values.contains_key(name) {
+                environment.values.insert(name.to_owned(), value.to_owned());
+                return Ok(());
             }
-
-            environment = new_enclosing;
+            else {
+                // If not found, try moving up by one environment
+                continue;
+            }
         }
+
+        Err(EnvironmentError::new(EnvironmentErrorType::UndefinedVariable(name.to_owned())))
     }
 }
 

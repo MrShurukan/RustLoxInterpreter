@@ -130,7 +130,7 @@ impl Expression {
         }
     }
 
-    pub fn evaluate(&self, environment: Rc<RefCell<Environment>>) -> Result<Value, EvaluationError> {
+    pub fn evaluate(&self, environments: Rc<Vec<Environment>>) -> Result<Value, EvaluationError> {
         match &self.expression_type {
             ExpressionType::Literal { value } => {
                 match value {
@@ -140,17 +140,17 @@ impl Expression {
                     LiteralType::Nil => Ok(Value::Nil),
 
                     LiteralType::Identifier(name) => { 
-                        Environment::get(environment, name).ok_or_else(|| {
+                        Environment::get(Rc::clone(&environments), name).ok_or_else(|| {
                             self.error(EvaluationErrorType::UndefinedVariable(name.to_owned()))
                         })
                     }
                 }
             },
             ExpressionType::Grouping { expression } => {
-                expression.evaluate(environment)
+                expression.evaluate(Rc::clone(&environments))
             },
             ExpressionType::Unary { operator, right } => {
-                let right = right.evaluate(environment)?;
+                let right = right.evaluate(Rc::clone(&environments))?;
 
                 match operator {
                     PunctuationType::Minus => {
@@ -165,8 +165,8 @@ impl Expression {
                 }
             },
             ExpressionType::Binary { left, operator, right } => {
-                let left = left.evaluate(Rc::clone(&environment))?;
-                let right = right.evaluate(Rc::clone(&environment))?;
+                let left = left.evaluate(Rc::clone(&environments))?;
+                let right = right.evaluate(Rc::clone(&environments))?;
 
                 match operator {
                     // - * / +
@@ -257,17 +257,17 @@ impl Expression {
                 }
             },
             ExpressionType::Ternary { first, second, third } => {
-                let first = first.evaluate(Rc::clone(&environment))?;
+                let first = first.evaluate(Rc::clone(&environments))?;
                 if first.is_truthy() {
-                    Ok(second.evaluate(Rc::clone(&environment))?)
+                    Ok(second.evaluate(Rc::clone(&environments))?)
                 }
                 else {
-                    Ok(third.evaluate(Rc::clone(&environment))?)
+                    Ok(third.evaluate(Rc::clone(&environments))?)
                 }
             },
             ExpressionType::Assignment { identifier, expression } => {
-                let value = expression.evaluate(Rc::clone(&environment))?;
-                let assign_result = Environment::assign(environment, identifier, &value);
+                let value = expression.evaluate(Rc::clone(&environments))?;
+                let assign_result = Environment::assign(Rc::clone(&environments), identifier, &value);
 
                 if let Err(EnvironmentError { environment_error_type }) = assign_result {
                     match environment_error_type {
