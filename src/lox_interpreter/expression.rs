@@ -283,8 +283,7 @@ impl Expression {
                         EnvironmentErrorType::LastEnvironmentRemoved => {
                             println!("{:?}", assign_result.err().unwrap());
                             panic!("Last environment was removed from the environment stack");
-                        },
-                        EnvironmentErrorType::NotInitVariableEval(_) => { unreachable!() }
+                        }
                     }
                 }
                 else {

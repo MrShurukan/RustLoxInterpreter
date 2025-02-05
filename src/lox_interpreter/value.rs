@@ -1,5 +1,4 @@
 ﻿use std::fmt::{Display, Formatter};
-use std::ptr::write;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {

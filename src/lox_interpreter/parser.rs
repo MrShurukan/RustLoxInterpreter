@@ -249,10 +249,52 @@ impl Parser<'_> {
     fn statement(&mut self, tokens: &mut Peekable<Iter<Token>>) -> Result<Statement, ParserError> {
         let token = &Self::peek(tokens)?;
         match token.token_type {
+            TT::Keyword(KT::Regular(RKT::If)) => { advance!(self, tokens); self.if_statement(tokens) }
             TT::Keyword(KT::Regular(RKT::Print)) => { advance!(self, tokens); self.print_statement(tokens) },
             TT::Punctuation(PT::LeftBrace) => { advance!(self, tokens); self.block_statement(tokens) }
             _ => self.expression_statement(tokens)
         }
+    }
+    
+    // "if" (( "(" expr ")" statement ) | ( "expr" blockStatement )) ("else" statement)?
+    fn if_statement(&mut self, tokens: &mut Peekable<Iter<Token>>) -> Result<Statement, ParserError> {
+        let token = &Self::peek(tokens)?;
+        match token.token_type {
+            TT::Punctuation(PT::LeftParen) => { advance!(self, tokens); self.if_paren(tokens) },
+            _ => { self.if_no_paren(tokens) }
+        }
+    }
+    
+    fn if_paren(&mut self, tokens: &mut Peekable<Iter<Token>>) -> Result<Statement, ParserError> {
+        let expr = self.expression(tokens)?;
+        check_and_consume!(self, tokens, TT::Punctuation(PT::RightParen), "Expected ')' after a parenthesised if-statement condition");
+        let statement = self.statement(tokens)?;
+        
+        self.else_statement(expr, statement, tokens)
+    }
+
+    fn if_no_paren(&mut self, tokens: &mut Peekable<Iter<Token>>) -> Result<Statement, ParserError> {
+        let expr = self.expression(tokens)?;
+        check_and_consume!(self, tokens, TT::Punctuation(PT::LeftBrace), "If statement without a '( )' condition must have a '{ }' body");
+        let statement = self.block_statement(tokens)?;
+
+        self.else_statement(expr, statement, tokens)
+    }
+    
+    fn else_statement(&mut self, condition: Expression, then_body: Statement, 
+                      tokens: &mut Peekable<Iter<Token>>) -> Result<Statement, ParserError> {
+        let token = &Self::peek(tokens)?;
+        let mut else_body: Option<Box<Statement>> = None;
+        
+        match token.token_type {
+            TT::Keyword(KT::Regular(RKT::Else)) => { 
+                advance!(self, tokens); 
+                else_body = Some(Box::new(self.statement(tokens)?)); 
+            },
+            _ => { }
+        }
+        
+        Ok(Statement::If { condition, then_body: Box::new(then_body), else_body })
     }
 
     fn print_statement<'a>(&mut self, tokens: &mut Peekable<Iter<Token>>) -> Result<Statement, ParserError> {

@@ -26,7 +26,6 @@ pub struct EnvironmentError {
 #[derive(Debug)]
 pub enum EnvironmentErrorType {
     UndefinedVariable(String),
-    NotInitVariableEval(String),
     LastEnvironmentRemoved
 }
 
@@ -35,8 +34,7 @@ impl Display for EnvironmentError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self.environment_error_type {
             EnvironmentErrorType::UndefinedVariable(name) => { write!(f, "Undefined variable '{}'", name) },
-            EnvironmentErrorType::LastEnvironmentRemoved => { write!(f, "Last environment was popped from the stack") },
-            EnvironmentErrorType::NotInitVariableEval(name) => { write!(f, "Variable '{}' wasn't initialized", name) }
+            EnvironmentErrorType::LastEnvironmentRemoved => { write!(f, "Last environment was popped from the stack") }
         }
     }
 }

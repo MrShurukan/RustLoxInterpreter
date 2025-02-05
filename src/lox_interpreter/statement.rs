@@ -10,7 +10,8 @@ pub enum Statement {
     Expression(Expression),
     Print(Expression),
     VariableDeclaration { identifier: Token, initializer: Option<Expression> },
-    Block(Rc<[Statement]>)
+    Block(Rc<[Statement]>),
+    If { condition: Expression, then_body: Box<Statement>, else_body: Option<Box<Statement>> }
 }
 
 impl Statement {
@@ -50,6 +51,14 @@ impl Statement {
                     // If we messed up during removing (i.e. removed all environments entirely)
                     // then we messed up big time somewhere
                     panic!("{e:?}")
+                }
+            },
+            Statement::If { condition, then_body, else_body } => {
+                if condition.evaluate(environments)?.is_truthy() {
+                    then_body.execute(environments)?;
+                }
+                else if let Some(else_body) = else_body {
+                    else_body.execute(environments)?;
                 }
             }
         };
