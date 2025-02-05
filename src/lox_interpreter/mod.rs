@@ -16,6 +16,8 @@ use anyhow::{bail, Context};
 use std::io::Write;
 use std::process::exit;
 use std::{fs, io};
+use crate::lox_interpreter::environment_stack::EnvironmentStack;
+use crate::lox_interpreter::value::Value;
 
 pub struct LoxInterpreter {
 }
@@ -29,7 +31,8 @@ impl LoxInterpreter {
         let contents = fs::read_to_string(file_name)
             .context("Can't read the specified file")?;
 
-        let result = Self::run(&contents);
+        let mut environment_stack = EnvironmentStack::new();
+        let result = Self::run(&contents, &mut environment_stack);
         match result {
             Err(err) => {
                 println!("{}", err);
@@ -44,6 +47,7 @@ impl LoxInterpreter {
     }
     pub fn run_prompt(&mut self) -> anyhow::Result<()> {
         println!("LOX REPL");
+        let mut environment_stack = EnvironmentStack::new();
 
         loop {
             print!("> ");
@@ -60,13 +64,16 @@ impl LoxInterpreter {
             }
 
             // Продолжаем работу интерпретатора независимо от результата этой строки
-            match Self::run(&trim) {
+            match Self::run(&trim, &mut environment_stack) {
+                Ok(value) if !value.is_nil() => {
+                    println!("-> {value}");
+                },
                 Ok(_) | Err(_) => { },
             };
         }
     }
 
-    fn run(source: &str) -> anyhow::Result<()> {
+    fn run(source: &str, environment_stack: &mut EnvironmentStack) -> anyhow::Result<Value> {
         let scanner = Scanner::new(source.to_owned());
 
         let tokens = scanner.scan_tokens();
@@ -93,8 +100,10 @@ impl LoxInterpreter {
 
             bail!("Couldn't advance to interpreting");
         }
-
-        let mut interpreter = Interpreter::new(source);
+        
+        let mut interpreter: Interpreter;
+        interpreter = Interpreter::new_with_environment(source, environment_stack);
+        
         let value = interpreter.interpret(&statements.ok().unwrap());
         if let Err(error) = value {
             println!("{error}\n");
@@ -102,6 +111,6 @@ impl LoxInterpreter {
             bail!("Couldn't evaluate");
         }
 
-        Ok(())
+        Ok(value?)
     }
 }

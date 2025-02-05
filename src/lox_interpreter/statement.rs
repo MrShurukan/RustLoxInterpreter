@@ -14,9 +14,10 @@ pub enum Statement {
 }
 
 impl Statement {
-    pub fn execute(&self, environments: &mut EnvironmentStack) -> Result<(), EvaluationError> {
+    pub fn execute(&self, environments: &mut EnvironmentStack) -> Result<Value, EvaluationError> {
+        let mut result = Value::Nil;
         match self {
-            Statement::Expression(expr) => { _ = expr.evaluate(environments)? },
+            Statement::Expression(expr) => { result = expr.evaluate(environments)? },
             Statement::Print(expr) => { 
                 let value = expr.evaluate(environments)?;
                 println!("{}", value);
@@ -53,6 +54,6 @@ impl Statement {
             }
         };
         
-        Ok(())
+        Ok(result)
     }
 }

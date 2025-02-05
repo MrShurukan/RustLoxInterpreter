@@ -3,6 +3,7 @@ use crate::lox_interpreter::expression::EvaluationError;
 use crate::lox_interpreter::statement::Statement;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
+use crate::lox_interpreter::value::Value;
 
 pub struct Interpreter<'a> {
     /// Source file, used to print errors
@@ -10,17 +11,18 @@ pub struct Interpreter<'a> {
     /// Environment stack. The latest environment on the stack represents the
     /// latest code block. You can access outer environments by moving back from 
     /// the end
-    environment: EnvironmentStack
+    environment: &'a mut EnvironmentStack
 }
 
-impl Interpreter<'_> {
-    pub fn new(source: &str) -> Interpreter {
-        Interpreter { source, environment: EnvironmentStack::new() }
-    } 
+impl Interpreter<'_> {    
+    pub fn new_with_environment<'a>(source: &'a str, environment_stack: &'a mut EnvironmentStack) -> Interpreter<'a> {
+        Interpreter { source, environment: environment_stack }
+    }
     
-    pub fn interpret(&mut self, statements: &[Statement]) -> Result<(), RuntimeError> {
+    pub fn interpret(&mut self, statements: &[Statement]) -> Result<Value, RuntimeError> {
+        let mut last_value = Value::Nil;
         for statement in statements {
-            statement.execute(&mut self.environment)
+            last_value = statement.execute(&mut self.environment)
                 .or_else(|err| {
                     Err(RuntimeError {
                         location: Some(Self::get_error_marked_line(&err, self.source)),
@@ -29,7 +31,7 @@ impl Interpreter<'_> {
                 })?;
         }
         
-        Ok(())
+        Ok(last_value)
     }
 
     // TODO: Refactor that a bit

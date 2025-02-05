@@ -25,6 +25,13 @@ impl Value {
             _ => true,
         }
     }
+    
+    pub fn is_nil(&self) -> bool {
+        match self {
+            Value::Nil => true,
+            _ => false
+        }
+    }
 }
 
 impl Display for Value {
