@@ -1,10 +1,1 @@
-var a = 2;
-
-if (a == 2) print "That's right!";
-else print "Not quite!";
-
-if a != 2 { print "Impossible!"; }
-else { print "Correct!"; }
-
-if 1 == 1 { print "I'm a humble if with no else"; }
-print "Other stuff";
+print true and "Hello";

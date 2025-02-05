@@ -1,7 +1,7 @@
 ﻿use crate::lox_interpreter::environment::{EnvironmentError, EnvironmentErrorType};
 use crate::lox_interpreter::environment_stack::EnvironmentStack;
 use crate::lox_interpreter::token::Token;
-use crate::lox_interpreter::token_type::{LiteralType, PunctuationType, TokenType};
+use crate::lox_interpreter::token_type::{KeywordType, LiteralType, PunctuationType, RegularKeywordType, TokenType};
 use crate::lox_interpreter::value::Value;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
@@ -19,7 +19,7 @@ pub struct Expression {
 
 #[derive(Debug, Clone)]
 pub enum ExpressionType {
-    Binary { left: Box<Expression>, operator: PunctuationType, right: Box<Expression> },
+    Binary { left: Box<Expression>, operator: TokenType, right: Box<Expression> },
     Ternary { first: Box<Expression>, second: Box<Expression>, third: Box<Expression> },
     Grouping { expression: Box<Expression> },
     Literal { value: LiteralType },
@@ -93,21 +93,16 @@ impl Expression {
     }
 
     pub fn new_binary(left: Expression, operator: &Token, right: Expression) -> Self {
-        if let TokenType::Punctuation(op) = &operator.token_type {
-            Self {
-                line_start: left.line_start,
-                line_end: right.line_end,
-                start_offset: left.start_offset,
-                end_offset: right.end_offset,
-                expression_type: ExpressionType::Binary {
-                    left: Box::new(left),
-                    operator: op.to_owned(),
-                    right: Box::new(right)
-                },
-            }
-        }
-        else {
-            unreachable!("Non-punctuation token passed to new_binary expression function");
+        Self {
+            line_start: left.line_start,
+            line_end: right.line_end,
+            start_offset: left.start_offset,
+            end_offset: right.end_offset,
+            expression_type: ExpressionType::Binary {
+                left: Box::new(left),
+                operator: operator.token_type.to_owned(),
+                right: Box::new(right)
+            },
         }
     }
 
@@ -170,95 +165,136 @@ impl Expression {
                     _ => { Err(self.error(EvaluationErrorType::IncorrectUnaryOperator(operator.to_owned()))) }
                 }
             },
-            ExpressionType::Binary { left, operator, right } => {
-                let left = left.evaluate(environments)?;
-                let right = right.evaluate(environments)?;
+            ExpressionType::Binary { left: left_expr, operator, right: right_expr } => {
+                let mut left: Value = Value::NotInitialized;
+                let mut right: Value = Value::NotInitialized;
 
                 match operator {
-                    // - * / +
-                    PunctuationType::Minus => {
-                        let left = self.ensure_number_for_arithmetic(left, "subtraction")?;
-                        let right = self.ensure_number_for_arithmetic(right, "subtraction")?;
+                    TokenType::Keyword(KeywordType::Regular(_)) => {
+                        // We will manually evaluate those if needed
+                        // This is required for "and" and "or"
+                    }
+                    _ => {
+                        left = left_expr.evaluate(environments)?;
+                        right = right_expr.evaluate(environments)?;
+                    }
+                }
 
-                        Ok(Value::Number(left - right))
+                match operator {
+                    TokenType::Punctuation(pt) => match pt {
+                        // - * / +
+                        PunctuationType::Minus => {
+                            let left = self.ensure_number_for_arithmetic(left, "subtraction")?;
+                            let right = self.ensure_number_for_arithmetic(right, "subtraction")?;
+
+                            Ok(Value::Number(left - right))
+                        },
+                        PunctuationType::Star => {
+                            let left = self.ensure_number_for_arithmetic(left, "multiplication")?;
+                            let right = self.ensure_number_for_arithmetic(right, "multiplication")?;
+
+                            Ok(Value::Number(left * right))
+                        },
+                        PunctuationType::Slash => {
+                            let left = self.ensure_number_for_arithmetic(left, "division")?;
+                            let right = self.ensure_number_for_arithmetic(right, "division")?;
+
+                            if right == 0.0 {
+                                return Err(self.error(EvaluationErrorType::DivisionByZero));
+                            }
+
+                            Ok(Value::Number(left / right))
+                        },
+                        PunctuationType::Plus => {
+                            let left_num = self.ensure_number_for_arithmetic_copy(&left, "addition");
+                            if left_num.is_err() {
+                                if let Value::String(_) = left {
+                                    Ok(Value::String(self.concat_convert(left, right)?))
+                                } else {
+                                    Err(left_num.err().unwrap())
+                                }
+                            } else {
+                                match &right {
+                                    Value::String(_) => {
+                                        Ok(Value::String(self.concat_convert(left, right)?))
+                                    },
+                                    Value::Number(right_num) => {
+                                        Ok(Value::Number(left_num.ok().unwrap() + right_num))
+                                    },
+                                    _ => Err(self.error(
+                                        EvaluationErrorType::IncorrectTypeForArithmeticOperation {
+                                            value: right,
+                                            operation: "addition"
+                                        }))
+                                }
+                            }
+                        },
+
+                        // > >= < <=
+                        PunctuationType::Greater => {
+                            let left = self.ensure_number_for_comparison(left)?;
+                            let right = self.ensure_number_for_comparison(right)?;
+
+                            Ok(Value::Boolean(left > right))
+                        },
+                        PunctuationType::GreaterEqual => {
+                            let left = self.ensure_number_for_comparison(left)?;
+                            let right = self.ensure_number_for_comparison(right)?;
+
+                            Ok(Value::Boolean(left >= right))
+                        },
+                        PunctuationType::Less => {
+                            let left = self.ensure_number_for_comparison(left)?;
+                            let right = self.ensure_number_for_comparison(right)?;
+
+                            Ok(Value::Boolean(left < right))
+                        },
+                        PunctuationType::LessEqual => {
+                            let left = self.ensure_number_for_comparison(left)?;
+                            let right = self.ensure_number_for_comparison(right)?;
+
+                            Ok(Value::Boolean(left <= right))
+                        },
+
+                        // == !=
+                        PunctuationType::EqualEqual => {
+                            Ok(Value::Boolean(left == right))
+                        },
+                        PunctuationType::BangEqual => {
+                            Ok(Value::Boolean(left != right))
+                        },
+                        _ => Err(self.error(EvaluationErrorType::IncorrectBinaryOperator(operator.to_owned())))
                     },
-                    PunctuationType::Star => {
-                        let left = self.ensure_number_for_arithmetic(left, "multiplication")?;
-                        let right = self.ensure_number_for_arithmetic(right, "multiplication")?;
 
-                        Ok(Value::Number(left * right))
-                    },
-                    PunctuationType::Slash => {
-                        let left = self.ensure_number_for_arithmetic(left, "division")?;
-                        let right = self.ensure_number_for_arithmetic(right, "division")?;
-
-                        if right == 0.0 {
-                            return Err(self.error(EvaluationErrorType::DivisionByZero));
-                        }
-
-                        Ok(Value::Number(left / right))
-                    },
-                    PunctuationType::Plus => {
-                        let left_num = self.ensure_number_for_arithmetic_copy(&left, "addition");
-                        if left_num.is_err() {
-                            if let Value::String(_) = left {
-                                Ok(Value::String(self.concat_convert(left, right)?))
+                    // Careful! Left and right are not evaluated here!
+                    // Their values are Value::NotInitialized
+                    TokenType::Keyword(KeywordType::Regular(keyword)) => match keyword {
+                        // and or
+                        RegularKeywordType::And => {
+                            // Lazy evaluation - evaluate right only if left is true
+                            left = left_expr.evaluate(environments)?;
+                            if !left.is_truthy() {
+                                Ok(left)
                             }
                             else {
-                                Err(left_num.err().unwrap())
+                                right = right_expr.evaluate(environments)?;
+                                Ok(right)
                             }
-                        }
-                        else {
-                            match &right {
-                                Value::String(_) => {
-                                    Ok(Value::String(self.concat_convert(left, right)?))
-                                },
-                                Value::Number(right_num) => {
-                                    Ok(Value::Number(left_num.ok().unwrap() + right_num))
-                                },
-                                _ => Err(self.error(
-                                    EvaluationErrorType::IncorrectTypeForArithmeticOperation {
-                                        value: right,
-                                        operation: "addition"
-                                    }))
+                        },
+                        RegularKeywordType::Or => {
+                            // Lazy evaluation - evaluate right only if left is false
+                            left = left_expr.evaluate(environments)?;
+                            if left.is_truthy() {
+                                Ok(left)
                             }
-                        }
-                    },
-
-                    // > >= < <=
-                    PunctuationType::Greater => {
-                        let left = self.ensure_number_for_comparison(left)?;
-                        let right = self.ensure_number_for_comparison(right)?;
-
-                        Ok(Value::Boolean(left > right))
-                    },
-                    PunctuationType::GreaterEqual => {
-                        let left = self.ensure_number_for_comparison(left)?;
-                        let right = self.ensure_number_for_comparison(right)?;
-
-                        Ok(Value::Boolean(left >= right))
-                    },
-                    PunctuationType::Less => {
-                        let left = self.ensure_number_for_comparison(left)?;
-                        let right = self.ensure_number_for_comparison(right)?;
-
-                        Ok(Value::Boolean(left < right))
-                    },
-                    PunctuationType::LessEqual => {
-                        let left = self.ensure_number_for_comparison(left)?;
-                        let right = self.ensure_number_for_comparison(right)?;
-
-                        Ok(Value::Boolean(left <= right))
-                    },
-
-                    // == !=
-                    PunctuationType::EqualEqual => {
-                        Ok(Value::Boolean(left == right))
-                    },
-                    PunctuationType::BangEqual => {
-                        Ok(Value::Boolean(left != right))
+                            else {
+                                right = right_expr.evaluate(environments)?;
+                                Ok(right)
+                            }
+                        },
+                        _ => Err(self.error(EvaluationErrorType::IncorrectBinaryOperator(operator.to_owned())))
                     }
-
+                    
                     _ => Err(self.error(EvaluationErrorType::IncorrectBinaryOperator(operator.to_owned())))
                 }
             },
@@ -351,7 +387,7 @@ pub enum EvaluationErrorType {
     IncorrectUnaryOperator(PunctuationType),
     IncorrectTypeForArithmeticOperation { operation: &'static str, value: Value },
     IncorrectTypeForComparison(Value),
-    IncorrectBinaryOperator(PunctuationType),
+    IncorrectBinaryOperator(TokenType),
     DivisionByZero,
     UndefinedVariable(String),
     NotInitVariableEval(String)
@@ -370,7 +406,7 @@ impl Display for EvaluationError {
             EvaluationErrorType::IncorrectUnaryOperator(op) =>
                 &format!("Can't use {} as a unary operator", op),
             EvaluationErrorType::IncorrectBinaryOperator(op) =>
-                &format!("Can't use {} as a binary operator", op),
+                &format!("Can't use {:?} as a binary operator", op),
             EvaluationErrorType::IncorrectTypeForArithmeticOperation { operation, value} =>
                 &format!("Expected a number for {operation}, found {}", value.get_type_name()),
             EvaluationErrorType::IncorrectTypeForComparison(value) =>

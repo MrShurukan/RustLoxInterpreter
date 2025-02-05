@@ -104,7 +104,8 @@ impl LoxInterpreter {
         let mut interpreter: Interpreter;
         interpreter = Interpreter::new_with_environment(source, environment_stack);
         
-        let value = interpreter.interpret(&statements.ok().unwrap());
+        let statements = &statements.ok().unwrap();
+        let value = interpreter.interpret(&statements);
         if let Err(error) = value {
             println!("{error}\n");
 

@@ -19,7 +19,7 @@ pub struct Parser<'a> {
 
 macro_rules! parse_binary {
     ($self:ident, $enum_types:pat_param, $expression:ident, $tokens:ident, $next_precedence:ident) => {
-        while let token @ Token { token_type: TT::Punctuation($enum_types), .. } = &Self::peek($tokens)? {
+        while let token @ Token { token_type: $enum_types, .. } = &Self::peek($tokens)? {
             advance!($self, $tokens);
             let right = $self.$next_precedence($tokens)?;
 
@@ -39,7 +39,7 @@ macro_rules! parse_binary {
 macro_rules! binary_error_produce {
     ($self:ident, $error_enum_types:pat_param, $tokens:ident, $next_precedence:ident) => {
         let current_token = &Self::peek($tokens)?;
-        if let TT::Punctuation($error_enum_types) = current_token.token_type {
+        if let $error_enum_types = current_token.token_type {
             advance!($self, $tokens);
             // Discard the right part
             _ = $self.$next_precedence($tokens)?;
@@ -360,14 +360,26 @@ impl Parser<'_> {
 
     // expr, expr
     fn comma<'a>(&mut self, tokens: &mut Peekable<Iter<Token>>) -> Result<Expression, ParserError> {
-        let expr = parse_binary_with_error_produce!(self, PT::Comma, tokens, equality);
+        let expr = parse_binary_with_error_produce!(self, TT::Punctuation(PT::Comma), tokens, logic_or);
+
+        Ok(expr)
+    }
+    
+    fn logic_or(&mut self, tokens: &mut Peekable<Iter<Token>>) -> Result<Expression, ParserError> {
+        let expr = parse_binary_with_error_produce!(self, TT::Keyword(KT::Regular(RKT::Or)), tokens, logic_and);
+
+        Ok(expr)
+    }
+
+    fn logic_and(&mut self, tokens: &mut Peekable<Iter<Token>>) -> Result<Expression, ParserError> {
+        let expr = parse_binary_with_error_produce!(self, TT::Keyword(KT::Regular(RKT::And)), tokens, equality);
 
         Ok(expr)
     }
 
     // != ==
     fn equality<'a>(&mut self, tokens: &mut Peekable<Iter<Token>>) -> Result<Expression, ParserError> {
-        let expr = parse_binary_with_error_produce!(self, (PT::BangEqual | PT::EqualEqual), tokens, comparison);
+        let expr = parse_binary_with_error_produce!(self, TT::Punctuation(PT::BangEqual | PT::EqualEqual), tokens, comparison);
 
         Ok(expr)
     }
@@ -375,7 +387,7 @@ impl Parser<'_> {
     // > >= < <=
     fn comparison<'a>(&mut self, tokens: &mut Peekable<Iter<Token>>) -> Result<Expression, ParserError> {
         let expr = parse_binary_with_error_produce!(self,
-            (PT::Greater | PT::GreaterEqual | PT::Less | PT::LessEqual), tokens, term);
+            TT::Punctuation(PT::Greater | PT::GreaterEqual | PT::Less | PT::LessEqual), tokens, term);
 
         Ok(expr)
     }
@@ -384,14 +396,14 @@ impl Parser<'_> {
     fn term<'a>(&mut self, tokens: &mut Peekable<Iter<Token>>) -> Result<Expression, ParserError> {
         // Only a plus should produce an error, because a minus could still be a unary operator
         let expr = parse_binary_with_error_produce!(self,
-            (PT::Plus | PT::Minus), (PT::Plus), tokens, factor);
+            TT::Punctuation(PT::Plus | PT::Minus), TT::Punctuation(PT::Plus), tokens, factor);
 
         Ok(expr)
     }
 
     // * /
     fn factor<'a>(&mut self, tokens: &mut Peekable<Iter<Token>>) -> Result<Expression, ParserError> {
-        let expr = parse_binary_with_error_produce!(self, (PT::Star | PT::Slash), tokens, unary);
+        let expr = parse_binary_with_error_produce!(self, TT::Punctuation(PT::Star | PT::Slash), tokens, unary);
 
         Ok(expr)
     }
