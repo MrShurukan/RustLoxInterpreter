@@ -7,6 +7,7 @@ mod value;
 mod interpreter;
 mod statement;
 mod environment;
+mod environment_stack;
 
 use crate::lox_interpreter::interpreter::Interpreter;
 use crate::lox_interpreter::parser::Parser;

@@ -1,4 +1,4 @@
-﻿use crate::lox_interpreter::environment::Environment;
+﻿use crate::lox_interpreter::environment_stack::EnvironmentStack;
 use crate::lox_interpreter::expression::EvaluationError;
 use crate::lox_interpreter::statement::Statement;
 use std::error::Error;
@@ -10,12 +10,12 @@ pub struct Interpreter<'a> {
     /// Environment stack. The latest environment on the stack represents the
     /// latest code block. You can access outer environments by moving back from 
     /// the end
-    environment: Vec<Environment>
+    environment: EnvironmentStack
 }
 
 impl Interpreter<'_> {
     pub fn new(source: &str) -> Interpreter {
-        Interpreter { source, environment: vec![Environment::new()] }
+        Interpreter { source, environment: EnvironmentStack::new() }
     } 
     
     pub fn interpret(&mut self, statements: &[Statement]) -> Result<(), RuntimeError> {

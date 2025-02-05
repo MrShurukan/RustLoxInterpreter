@@ -1,4 +1,4 @@
-﻿use crate::lox_interpreter::environment::Environment;
+﻿use crate::lox_interpreter::environment_stack::EnvironmentStack;
 use crate::lox_interpreter::expression::{EvaluationError, Expression};
 use crate::lox_interpreter::token::Token;
 use crate::lox_interpreter::token_type::{LiteralType, TokenType};
@@ -14,7 +14,7 @@ pub enum Statement {
 }
 
 impl Statement {
-    pub fn execute(&self, environments: &mut Vec<Environment>) -> Result<(), EvaluationError> {
+    pub fn execute(&self, environments: &mut EnvironmentStack) -> Result<(), EvaluationError> {
         match self {
             Statement::Expression(expr) => { _ = expr.evaluate(environments)? },
             Statement::Print(expr) => { 
@@ -29,12 +29,7 @@ impl Statement {
 
                 if let TokenType::Literal(LiteralType::Identifier(name)) = &identifier.token_type {
                     // Grab the most recent environment out of the stack to define the variable in
-                    // If it doesn't exist in the stack - something went very wrong somewhere else
-                    environments
-                        .iter_mut()
-                        .nth_back(0)
-                        .expect("There was no environments to execute the statement in")
-                        .define(name.to_owned(), value);
+                    environments.define(name.to_owned(), value);
                 }
                 else {
                     unreachable!("Variable declaration had token of type != Identifier");
@@ -42,7 +37,7 @@ impl Statement {
             },
             Statement::Block(statements) => {
                 // 1) Create a new environment for the block
-                environments.push(Environment::new());
+                environments.push_new();
 
                 // 2) Execute statements in that new environment stack
                 for statement in statements.iter() {
@@ -50,7 +45,11 @@ impl Statement {
                 }
                 
                 // 3) Pop the created environment from the stack
-                environments.pop();
+                if let Err(e) = environments.remove_last() {
+                    // If we messed up during removing (i.e. removed all environments entirely)
+                    // then we messed up big time somewhere
+                    panic!("{e:?}")
+                }
             }
         };
         

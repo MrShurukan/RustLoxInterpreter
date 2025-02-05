@@ -1,4 +1,5 @@
-﻿use crate::lox_interpreter::environment::{Environment, EnvironmentError, EnvironmentErrorType};
+﻿use crate::lox_interpreter::environment::{EnvironmentError, EnvironmentErrorType};
+use crate::lox_interpreter::environment_stack::EnvironmentStack;
 use crate::lox_interpreter::token::Token;
 use crate::lox_interpreter::token_type::{LiteralType, PunctuationType, TokenType};
 use crate::lox_interpreter::value::Value;
@@ -128,7 +129,7 @@ impl Expression {
         }
     }
 
-    pub fn evaluate(&self, environments: &mut Vec<Environment>) -> Result<Value, EvaluationError> {
+    pub fn evaluate(&self, environments: &mut EnvironmentStack) -> Result<Value, EvaluationError> {
         match &self.expression_type {
             ExpressionType::Literal { value } => {
                 match value {
@@ -138,7 +139,7 @@ impl Expression {
                     LiteralType::Nil => Ok(Value::Nil),
 
                     LiteralType::Identifier(name) => { 
-                        Environment::get(environments, name).ok_or_else(|| {
+                        environments.get(name).ok_or_else(|| {
                             self.error(EvaluationErrorType::UndefinedVariable(name.to_owned()))
                         })
                     }
@@ -265,12 +266,16 @@ impl Expression {
             },
             ExpressionType::Assignment { identifier, expression } => {
                 let value = expression.evaluate(environments)?;
-                let assign_result = Environment::assign(environments, identifier, &value);
+                let assign_result = environments.assign(identifier.to_owned(), value.to_owned());
 
-                if let Err(EnvironmentError { environment_error_type }) = assign_result {
+                if let Err(EnvironmentError { ref environment_error_type }) = assign_result {
                     match environment_error_type {
                         EnvironmentErrorType::UndefinedVariable(name) => {
-                            Err(self.error(EvaluationErrorType::UndefinedVariable(name)))
+                            Err(self.error(EvaluationErrorType::UndefinedVariable(name.to_owned())))
+                        },
+                        EnvironmentErrorType::LastEnvironmentRemoved => {
+                            println!("{:?}", assign_result.err().unwrap());
+                            panic!("Last environment was removed from the environment stack");
                         }
                     }
                 }
