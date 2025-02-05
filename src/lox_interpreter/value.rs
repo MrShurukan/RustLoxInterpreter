@@ -1,11 +1,13 @@
 ﻿use std::fmt::{Display, Formatter};
+use std::ptr::write;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     String(String),
     Number(f64),
     Boolean(bool),
-    Nil
+    Nil,
+    NotInitialized
 }
 
 impl Value {
@@ -14,7 +16,8 @@ impl Value {
             Value::String(_) => "string",
             Value::Number(_) => "number",
             Value::Boolean(_) => "bool",
-            Value::Nil => "nil"
+            Value::Nil => "nil",
+            Value::NotInitialized => "[not init]",
         }
     }
     
@@ -32,17 +35,23 @@ impl Value {
             _ => false
         }
     }
+
+    pub fn is_not_init(&self) -> bool {
+        match self {
+            Value::NotInitialized => true,
+            _ => false
+        }
+    }
 }
 
 impl Display for Value {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Value::String(str) => { write!(f, "{str}")? }
-            Value::Number(num) => { write!(f, "{num}")? }
-            Value::Boolean(bool) => { write!(f, "{bool}")? }
-            Value::Nil => { write!(f, "nil")? }
-        };
-        
-        Ok(())
+            Value::String(str) => { write!(f, "{str}") }
+            Value::Number(num) => { write!(f, "{num}") }
+            Value::Boolean(bool) => { write!(f, "{bool}") }
+            Value::Nil => { write!(f, "nil") },
+            Value::NotInitialized => { write!(f, "[not init]") }
+        }
     }
 }

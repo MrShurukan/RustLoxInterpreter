@@ -23,7 +23,7 @@ impl Statement {
                 println!("{}", value);
             },
             Statement::VariableDeclaration { identifier, initializer } => {
-                let mut value = Value::Nil;
+                let mut value = Value::NotInitialized;
                 if let Some(expr) = initializer {
                     value = expr.evaluate(environments)?;
                 }

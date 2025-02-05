@@ -110,7 +110,7 @@ impl Expression {
             unreachable!("Non-punctuation token passed to new_binary expression function");
         }
     }
-    
+
     pub fn new_assignment(identifier: Expression, expression: Expression) -> Self {
         if let ExpressionType::Literal { value: LiteralType::Identifier(name) } = &identifier.expression_type {
             Self {
@@ -138,10 +138,17 @@ impl Expression {
                     LiteralType::Boolean(bool) => Ok(Value::Boolean(*bool)),
                     LiteralType::Nil => Ok(Value::Nil),
 
-                    LiteralType::Identifier(name) => { 
-                        environments.get(name).ok_or_else(|| {
+                    LiteralType::Identifier(name) => {
+                        let value = environments.get(name).ok_or_else(|| {
                             self.error(EvaluationErrorType::UndefinedVariable(name.to_owned()))
-                        })
+                        })?;
+                        
+                        if value.is_not_init() {
+                            Err(self.error(EvaluationErrorType::NotInitVariableEval(name.to_owned())))
+                        }
+                        else {
+                            Ok(value)
+                        }
                     }
                 }
             },
@@ -276,7 +283,8 @@ impl Expression {
                         EnvironmentErrorType::LastEnvironmentRemoved => {
                             println!("{:?}", assign_result.err().unwrap());
                             panic!("Last environment was removed from the environment stack");
-                        }
+                        },
+                        EnvironmentErrorType::NotInitVariableEval(_) => { unreachable!() }
                     }
                 }
                 else {
@@ -316,21 +324,16 @@ impl Expression {
             )
         }
     }
-    
+
     fn concat_convert(&self, left: Value, right: Value) -> Result<String, EvaluationError> {
-        let left = self.convert_to_str(left)?;
-        let right = self.convert_to_str(right)?;
-        
+        let left = self.convert_to_str(left);
+        let right = self.convert_to_str(right);
+
         Ok(left + &right)
     }
-    
-    fn convert_to_str(&self, value: Value) -> Result<String, EvaluationError> {
-        match value {
-            Value::String(str) => { Ok(str) }
-            Value::Number(num) => { Ok(num.to_string()) }
-            Value::Boolean(bool) => { Ok(bool.to_string()) }
-            Value::Nil => { Ok(String::from("nil")) }
-        }
+
+    fn convert_to_str(&self, value: Value) -> String {
+        format!("{value}")
     }
 
     fn error(&self, evaluation_error_type: EvaluationErrorType) -> EvaluationError {
@@ -351,7 +354,8 @@ pub enum EvaluationErrorType {
     IncorrectTypeForComparison(Value),
     IncorrectBinaryOperator(PunctuationType),
     DivisionByZero,
-    UndefinedVariable(String)
+    UndefinedVariable(String),
+    NotInitVariableEval(String)
 }
 
 impl Error for EvaluationError {}
@@ -375,7 +379,9 @@ impl Display for EvaluationError {
             EvaluationErrorType::DivisionByZero =>
                 "Division by zero",
             EvaluationErrorType::UndefinedVariable(name) =>
-                &format!("Undefined variable '{}'", name)
+                &format!("Undefined variable '{name}'"),
+            EvaluationErrorType::NotInitVariableEval(name) =>
+                &format!("Variable '{name}' wasn't initialized")
         };
 
         write!(f, "{error_header}\n{message}")?;

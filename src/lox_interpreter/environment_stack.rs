@@ -16,11 +16,11 @@ impl EnvironmentStack {
             .nth_back(0)
             .expect("Environment stack must always have at least one environment")
     }
-    
+
     pub fn define(&mut self, name: String, value: Value) {
         self.last().define(name, value);
     }
-    
+
     pub fn get(&self, name: &String) -> Option<Value> {
         for environment in self.environments.iter().rev() {
             match environment.values.get(name) {
@@ -33,7 +33,7 @@ impl EnvironmentStack {
 
         None
     }
-    
+
     pub fn assign(&mut self, name: String, value: Value) -> Result<(), EnvironmentError> {
         for environment in self.environments.iter_mut().rev() {
             // Try to set the value in the current environment
@@ -49,11 +49,11 @@ impl EnvironmentStack {
 
         Err(EnvironmentError::new(EnvironmentErrorType::UndefinedVariable(name)))
     }
-    
+
     pub fn push_new(&mut self) {
         self.environments.push(Environment::new())
     }
-    
+
     pub fn remove_last(&mut self) -> Result<(), EnvironmentError> {
         if self.environments.len() == 1 {
             Err(EnvironmentError::new(EnvironmentErrorType::LastEnvironmentRemoved))
